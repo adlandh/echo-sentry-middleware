@@ -3,13 +3,16 @@ package echo_sentry_middleware
 import (
 	"crypto/rand"
 	"fmt"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
 
-func limitString(str string, size int) string {
+func prepareTagValue(str string) string {
+	size := 200                               // limit of sentry
+	str = strings.Replace(str, "\n", " ", -1) // no \n ib strings
 	if len(str) > size {
-		return str[:size/2] + "\n---- skipped ----\n" + str[len(str)-size/2:]
+		return str[:size-3] + "..."
 	}
 
 	return str

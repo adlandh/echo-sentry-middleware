@@ -10,36 +10,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_limitString(t *testing.T) {
-	type args struct {
-		str  string
-		size int
-	}
+func Test_limitTagValue(t *testing.T) {
 	tests := []struct {
 		name string
-		args args
+		str  string
 		want string
 	}{
 		{
-			name: "Short string - large limit",
-			args: args{
-				str:  "05Kj7",
-				size: 100,
-			},
-			want: "05Kj7",
+			name: "Short string",
+			str:  "i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7",
+			want: "i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7i3WEG3605Kj7",
 		},
 		{
-			name: "Long string - small limit",
-			args: args{
-				str:  "05Kj7z2AXCl603gMJu6B23z2sD",
-				size: 10,
-			},
-			want: "05Kj7\n---- skipped ----\n3z2sD",
+			name: "Long string containing \\n",
+			str:  "05Kj7z2AXCl603gMJu6B23z2sD05\nKj7z2AXCl603gMJu6B23z2sD05Kj7z\n2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD",
+			want: "05Kj7z2AXCl603gMJu6B23z2sD05 Kj7z2AXCl603gMJu6B23z2sD05Kj7z 2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AXCl60...",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, limitString(tt.args.str, tt.args.size))
+			require.True(t, len(prepareTagValue(tt.str)) <= 200)
+			require.Equal(t, tt.want, prepareTagValue(tt.str))
 		})
 	}
 }

@@ -21,13 +21,6 @@ type (
 
 		// add req body & resp body to attributes
 		IsBodyDump bool
-
-		// prevent logging long http request bodies
-		LimitHTTPBody bool
-
-		// http body limit size (in bytes)
-		// NOTE: don't specify values larger than 60000 as jaeger can't handle values in span.LogKV larger than 60000 bytes
-		LimitSize int
 	}
 )
 
@@ -37,8 +30,6 @@ var (
 		Skipper:        middleware.DefaultSkipper,
 		AreHeadersDump: true,
 		IsBodyDump:     false,
-		LimitHTTPBody:  true,
-		LimitSize:      1000,
 	}
 )
 
@@ -79,25 +70,25 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 			ctx := span.Context()
 
 			transaction := sentry.TransactionFromContext(ctx)
-			transaction.SetTag("client_ip", realIP)
-			transaction.SetTag("request_id", requestID)
-			transaction.SetTag("remote_addr", request.RemoteAddr)
-			transaction.SetTag("request_uri", request.RequestURI)
-			transaction.SetTag("http.path", c.Path())
+			transaction.SetTag("client_ip", prepareTagValue(realIP))
+			transaction.SetTag("request_id", prepareTagValue(requestID))
+			transaction.SetTag("remote_addr", prepareTagValue(request.RemoteAddr))
+			transaction.SetTag("request_uri", prepareTagValue(request.RequestURI))
+			transaction.SetTag("path", prepareTagValue(c.Path()))
 
 			if username, _, ok := request.BasicAuth(); ok {
-				transaction.SetTag("http.user", username)
+				transaction.SetTag("user", prepareTagValue(username))
 			}
 
 			//Add path parameters
 			for _, paramName := range c.ParamNames() {
-				transaction.SetTag("http.path."+paramName, c.Param(paramName))
+				transaction.SetTag("path."+paramName, prepareTagValue(c.Param(paramName)))
 			}
 
 			//Dump request headers
 			if config.AreHeadersDump {
 				for k := range request.Header {
-					transaction.SetTag("http.req.header."+k, request.Header.Get(k))
+					transaction.SetTag("req.header."+k, request.Header.Get(k))
 				}
 			}
 
@@ -109,11 +100,8 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 				if c.Request().Body != nil {
 					reqBody, _ = io.ReadAll(c.Request().Body)
 
-					if config.LimitHTTPBody {
-						transaction.SetTag("http.req.body", limitString(string(reqBody), config.LimitSize))
-					} else {
-						transaction.SetTag("http.req.body", string(reqBody))
-					}
+					transaction.SetTag("req.body", prepareTagValue(string(reqBody)))
+
 				}
 
 				request.Body = io.NopCloser(bytes.NewBuffer(reqBody)) // reset original request body
@@ -133,22 +121,18 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 				c.Error(err) // call custom registered error handler
 			}
 
-			transaction.SetTag("http.resp.status", strconv.Itoa(c.Response().Status))
+			transaction.SetTag("resp.status", strconv.Itoa(c.Response().Status))
 
 			//Dump response headers
 			if config.AreHeadersDump {
 				for k := range c.Response().Header() {
-					transaction.SetTag("http.resp.header."+k, c.Response().Header().Get(k))
+					transaction.SetTag("resp.header."+k, prepareTagValue(c.Response().Header().Get(k)))
 				}
 			}
 
 			// Dump response body
 			if config.IsBodyDump {
-				if config.LimitHTTPBody {
-					transaction.SetTag("http.resp.body", limitString(respDumper.GetResponse(), config.LimitSize))
-				} else {
-					transaction.SetTag("http.resp.body", respDumper.GetResponse())
-				}
+				transaction.SetTag("resp.body", prepareTagValue(respDumper.GetResponse()))
 			}
 
 			return nil // error was already processed with ctx.Error(err)
