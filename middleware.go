@@ -68,28 +68,28 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 			span := sentry.StartSpan(savedCtx, opname, sentry.TransactionName(tname))
 			defer span.Finish()
+
 			ctx := span.Context()
 
-			transaction := sentry.TransactionFromContext(ctx)
-			transaction.SetTag("client_ip", prepareTagValue(realIP))
-			transaction.SetTag("request_id", prepareTagValue(requestID))
-			transaction.SetTag("remote_addr", prepareTagValue(request.RemoteAddr))
-			transaction.SetTag("request_uri", prepareTagValue(request.RequestURI))
-			transaction.SetTag("path", prepareTagValue(c.Path()))
+			span.SetTag("client_ip", prepareTagValue(realIP))
+			span.SetTag("request_id", prepareTagValue(requestID))
+			span.SetTag("remote_addr", prepareTagValue(request.RemoteAddr))
+			span.SetTag("request_uri", prepareTagValue(request.RequestURI))
+			span.SetTag("path", prepareTagValue(c.Path()))
 
 			if username, _, ok := request.BasicAuth(); ok {
-				transaction.SetTag("user", prepareTagValue(username))
+				span.SetTag("user", prepareTagValue(username))
 			}
 
 			//Add path parameters
 			for _, paramName := range c.ParamNames() {
-				transaction.SetTag("path."+paramName, prepareTagValue(c.Param(paramName)))
+				span.SetTag("path."+paramName, prepareTagValue(c.Param(paramName)))
 			}
 
 			//Dump request headers
 			if config.AreHeadersDump {
 				for k := range request.Header {
-					transaction.SetTag("req.header."+k, request.Header.Get(k))
+					span.SetTag("req.header."+k, request.Header.Get(k))
 				}
 			}
 
@@ -101,7 +101,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 				if c.Request().Body != nil {
 					reqBody, _ = io.ReadAll(c.Request().Body)
 
-					transaction.SetTag("req.body", prepareTagValue(string(reqBody)))
+					span.SetTag("req.body", prepareTagValue(string(reqBody)))
 
 				}
 
@@ -118,22 +118,22 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 			// call next middleware / controller
 			err = next(c)
 			if err != nil {
-				transaction.SetTag("echo.error", err.Error())
+				span.SetTag("echo.error", err.Error())
 				c.Error(err) // call custom registered error handler
 			}
 
-			transaction.SetTag("resp.status", strconv.Itoa(c.Response().Status))
+			span.SetTag("resp.status", strconv.Itoa(c.Response().Status))
 
 			//Dump response headers
 			if config.AreHeadersDump {
 				for k := range c.Response().Header() {
-					transaction.SetTag("resp.header."+k, prepareTagValue(c.Response().Header().Get(k)))
+					span.SetTag("resp.header."+k, prepareTagValue(c.Response().Header().Get(k)))
 				}
 			}
 
 			// Dump response body
 			if config.IsBodyDump {
-				transaction.SetTag("resp.body", prepareTagValue(respDumper.GetResponse()))
+				span.SetTag("resp.body", prepareTagValue(respDumper.GetResponse()))
 			}
 
 			return nil // error was already processed with ctx.Error(err)
