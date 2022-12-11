@@ -25,8 +25,8 @@ type (
 )
 
 var (
-	// DefaultOtelConfig is the default OpenTelemetry middleware config.
-	DefaultOtelConfig = SentryConfig{
+	// DefaultSentryConfig is the default Sengry Performance middleware config.
+	DefaultSentryConfig = SentryConfig{
 		Skipper:        middleware.DefaultSkipper,
 		AreHeadersDump: true,
 		IsBodyDump:     false,
@@ -35,7 +35,7 @@ var (
 
 // Middleware returns a OpenTelemetry middleware with default config
 func Middleware() echo.MiddlewareFunc {
-	return MiddlewareWithConfig(DefaultOtelConfig)
+	return MiddlewareWithConfig(DefaultSentryConfig)
 }
 
 // MiddlewareWithConfig returns a OpenTelemetry middleware with config.
@@ -57,6 +57,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 				request = request.WithContext(savedCtx)
 				c.SetRequest(request)
 			}()
+
 			opname := "HTTP " + request.Method + " " + c.Path()
 			tname := "HTTP " + request.Method + " " + c.Request().RequestURI
 
