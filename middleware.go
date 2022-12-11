@@ -61,7 +61,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 			request := c.Request()
 			savedCtx := request.Context()
-			ctx := request.Context()
+
 			defer func() {
 				request = request.WithContext(savedCtx)
 				c.SetRequest(request)
@@ -74,10 +74,11 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 			var err error
 
-			span := sentry.StartSpan(ctx, opname, sentry.TransactionName(tname))
+			span := sentry.StartSpan(savedCtx, opname, sentry.TransactionName(tname))
 			defer span.Finish()
+			ctx := span.Context()
 
-			transaction := sentry.TransactionFromContext(c.Request().Context())
+			transaction := sentry.TransactionFromContext(ctx)
 			transaction.SetTag("client_ip", realIP)
 			transaction.SetTag("request_id", requestID)
 			transaction.SetTag("remote_addr", request.RemoteAddr)
