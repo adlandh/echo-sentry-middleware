@@ -11,7 +11,7 @@ import (
 )
 
 type (
-	// SentryConfig defines the config for Sentry Perfomance middleware.
+	// SentryConfig defines the config for Sentry Performance middleware.
 	SentryConfig struct {
 		// Skipper defines a function to skip middleware.
 		Skipper middleware.Skipper
@@ -25,7 +25,7 @@ type (
 )
 
 var (
-	// DefaultSentryConfig is the default Sengry Performance middleware config.
+	// DefaultSentryConfig is the default Sentry Performance middleware config.
 	DefaultSentryConfig = SentryConfig{
 		Skipper:        middleware.DefaultSkipper,
 		AreHeadersDump: true,
