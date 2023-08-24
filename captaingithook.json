@@ -1,6 +1,5 @@
 {
   "hooks": {
-    "pre-commit": "go test ./...",
-    "pre-push": "golangci-lint run "
+    "pre-push": "go test ./... && golangci-lint run "
   }
 }
