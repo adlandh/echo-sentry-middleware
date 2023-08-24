@@ -66,7 +66,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 			var err error
 
-			span := sentry.StartSpan(savedCtx, opname, sentry.TransactionName(tname))
+			span := sentry.StartSpan(savedCtx, opname, sentry.WithTransactionName(tname))
 			defer span.Finish()
 
 			ctx := span.Context()
