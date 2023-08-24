@@ -35,6 +35,31 @@ func Test_limitTagValue(t *testing.T) {
 	}
 }
 
+func Test_limitTagName(t *testing.T) {
+	tests := []struct {
+		name string
+		str  string
+		want string
+	}{
+		{
+			name: "Short string",
+			str:  "i3WEG3605Kj7",
+			want: "i3WEG3605Kj7",
+		},
+		{
+			name: "Long string",
+			str:  "05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AX",
+			want: "05Kj7z2AXCl603gMJu6B23z2sD05Kj7z",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.True(t, len(prepareTagName(tt.str)) <= 32)
+			require.Equal(t, tt.want, prepareTagName(tt.str))
+		})
+	}
+}
+
 func Test_generateToken(t *testing.T) {
 	rand.Seed(time.Now().UnixMicro())
 	count := rand.Intn(20)

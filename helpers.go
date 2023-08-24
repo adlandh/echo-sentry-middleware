@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/labstack/echo/v4"
 )
 
@@ -16,6 +17,23 @@ func prepareTagValue(str string) string {
 	}
 
 	return str
+}
+
+func prepareTagName(str string) string {
+	size := 32 // limit of sentry
+	if len(str) > size {
+		return str[:size]
+	}
+
+	return str
+}
+
+func setTag(span *sentry.Span, tag, value string) {
+	if tag == "" || value == "" {
+		return
+	}
+
+	span.SetTag(prepareTagName(tag), prepareTagValue(value))
 }
 
 func getRequestID(ctx echo.Context) string {

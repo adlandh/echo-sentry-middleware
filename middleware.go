@@ -71,25 +71,25 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 			ctx := span.Context()
 
-			span.SetTag("client_ip", prepareTagValue(realIP))
-			span.SetTag("request_id", prepareTagValue(requestID))
-			span.SetTag("remote_addr", prepareTagValue(request.RemoteAddr))
-			span.SetTag("request_uri", prepareTagValue(request.RequestURI))
-			span.SetTag("path", prepareTagValue(c.Path()))
+			setTag(span, "client_ip", realIP)
+			setTag(span, "request_id", requestID)
+			setTag(span, "remote_addr", request.RemoteAddr)
+			setTag(span, "request_uri", request.RequestURI)
+			setTag(span, "path", c.Path())
 
 			if username, _, ok := request.BasicAuth(); ok {
-				span.SetTag("user", prepareTagValue(username))
+				setTag(span, "user", username)
 			}
 
 			//Add path parameters
 			for _, paramName := range c.ParamNames() {
-				span.SetTag("path."+paramName, prepareTagValue(c.Param(paramName)))
+				setTag(span, "path."+paramName, c.Param(paramName))
 			}
 
 			//Dump request headers
 			if config.AreHeadersDump {
 				for k := range request.Header {
-					span.SetTag("req.header."+k, request.Header.Get(k))
+					setTag(span, "req.header."+k, request.Header.Get(k))
 				}
 			}
 
@@ -101,7 +101,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 				if c.Request().Body != nil {
 					reqBody, _ = io.ReadAll(c.Request().Body)
 
-					span.SetTag("req.body", prepareTagValue(string(reqBody)))
+					setTag(span, "req.body", string(reqBody))
 
 				}
 
@@ -118,22 +118,22 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 			// call next middleware / controller
 			err = next(c)
 			if err != nil {
-				span.SetTag("echo.error", err.Error())
+				setTag(span, "echo.error", err.Error())
 				c.Error(err) // call custom registered error handler
 			}
 
-			span.SetTag("resp.status", strconv.Itoa(c.Response().Status))
+			setTag(span, "resp.status", strconv.Itoa(c.Response().Status))
 
 			//Dump response headers
 			if config.AreHeadersDump {
 				for k := range c.Response().Header() {
-					span.SetTag("resp.header."+k, prepareTagValue(c.Response().Header().Get(k)))
+					setTag(span, "resp.header."+k, c.Response().Header().Get(k))
 				}
 			}
 
 			// Dump response body
 			if config.IsBodyDump {
-				span.SetTag("resp.body", prepareTagValue(respDumper.GetResponse()))
+				setTag(span, "resp.body", respDumper.GetResponse())
 			}
 
 			return nil // error was already processed with ctx.Error(err)
