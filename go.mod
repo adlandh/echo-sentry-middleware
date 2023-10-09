@@ -3,7 +3,7 @@ module github.com/adlandh/echo-sentry-middleware
 go 1.18
 
 require (
-	github.com/getsentry/sentry-go v0.24.1
+	github.com/getsentry/sentry-go v0.25.0
 	github.com/labstack/echo/v4 v4.11.1
 	github.com/stretchr/testify v1.8.4
 )
