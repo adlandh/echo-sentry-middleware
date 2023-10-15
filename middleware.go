@@ -97,15 +97,14 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 			var respDumper *responseDumper
 			if config.IsBodyDump {
 				// request
-				reqBody := []byte{}
-				if c.Request().Body != nil {
-					reqBody, _ = io.ReadAll(c.Request().Body)
-
-					setTag(span, "req.body", string(reqBody))
-
+				if request.Body != nil {
+					reqBody, err := io.ReadAll(request.Body)
+					if err == nil {
+						setTag(span, "req.body", string(reqBody))
+						_ = request.Body.Close()
+						request.Body = io.NopCloser(bytes.NewBuffer(reqBody)) // reset original request body
+					}
 				}
-
-				request.Body = io.NopCloser(bytes.NewBuffer(reqBody)) // reset original request body
 
 				// response
 				respDumper = newResponseDumper(c.Response())
