@@ -1,5 +1,5 @@
 {
   "hooks": {
-    "pre-push": "go test ./... && golangci-lint run "
+    "pre-push": "golangci-lint run && go test -cover -race ./..."
   }
 }

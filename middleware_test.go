@@ -1,4 +1,4 @@
-package echo_sentry_middleware
+package echosentrymiddleware
 
 import (
 	"io"

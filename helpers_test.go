@@ -1,12 +1,11 @@
-package echo_sentry_middleware
+package echosentrymiddleware
 
 import (
-	"math/rand"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,29 +59,24 @@ func Test_limitTagName(t *testing.T) {
 	}
 }
 
-func Test_generateToken(t *testing.T) {
-	rand.Seed(time.Now().UnixMicro())
-	count := rand.Intn(20)
-	for tt := 0; tt < count; tt++ {
-		require.Equal(t, 32, len(generateToken()))
-	}
-}
-
 func Test_getRequestID(t *testing.T) {
 	e := echo.New()
 
 	t.Run("token in header", func(t *testing.T) {
-		req := httptest.NewRequest(echo.GET, "/", nil)
-		req.Header.Set(echo.HeaderXRequestID, "test")
-		rec := httptest.NewRecorder()
-		c := e.NewContext(req, rec)
+		r := httptest.NewRequest(echo.GET, "/", nil)
+		r.Header.Set(echo.HeaderXRequestID, "test")
+		w := httptest.NewRecorder()
+		c := e.NewContext(r, w)
+		e.ServeHTTP(w, r)
 		require.Equal(t, "test", getRequestID(c))
 	})
 
 	t.Run("generate token", func(t *testing.T) {
-		req := httptest.NewRequest(echo.GET, "/", nil)
-		rec := httptest.NewRecorder()
-		c := e.NewContext(req, rec)
+		e.Use(middleware.RequestID())
+		r := httptest.NewRequest(echo.GET, "/", nil)
+		w := httptest.NewRecorder()
+		c := e.NewContext(r, w)
+		e.ServeHTTP(w, r)
 		require.Equal(t, 32, len(getRequestID(c)))
 	})
 }
