@@ -74,21 +74,22 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
 			s.NotEmpty(span.Tags["client_ip"])
-			s.Equal(echo.MIMEApplicationJSON, span.Tags["req.header.Content-Type"])
+			s.Equal(echo.MIMETextPlain, span.Tags["req.header.Content-Type"])
 			s.Equal("test", span.Tags["req.header.Testheader"])
 			s.Empty(span.Tags["req.body"])
 			return c.String(http.StatusOK, "test")
 		})
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("testBody"))
+		req.Header.Set(echo.HeaderContentType, echo.MIMETextPlain)
+		req.Header.Set("testHeader", "test")
+		rec := httptest.NewRecorder()
+		s.e.ServeHTTP(rec, req)
+		s.Equal(http.StatusOK, rec.Code)
+		body, err := io.ReadAll(rec.Body)
+		s.NoError(err)
+		s.Equal("test", string(body))
 	})
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("testBody"))
-	req.Header.Set(echo.HeaderContentType, echo.MIMETextPlain)
-	req.Header.Set("testHeader", "test")
-	rec := httptest.NewRecorder()
-	s.e.ServeHTTP(rec, req)
-	s.Equal(http.StatusOK, rec.Code)
-	body, err := io.ReadAll(rec.Body)
-	s.NoError(err)
-	s.Equal("test", string(body))
 }
 
 func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
@@ -118,6 +119,7 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 		s.NoError(err)
 		s.Equal("test", string(body))
 	})
+
 	s.Run("Test Post", func() {
 		s.e.POST("/", func(c echo.Context) error {
 			span := sentry.TransactionFromContext(c.Request().Context())
@@ -129,16 +131,17 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			s.Equal("testBody", span.Tags["req.body"])
 			return c.String(http.StatusOK, "test")
 		})
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("testBody"))
+		req.Header.Set(echo.HeaderContentType, echo.MIMETextPlain)
+		req.Header.Set("testHeader", "test")
+		rec := httptest.NewRecorder()
+		s.e.ServeHTTP(rec, req)
+		s.Equal(http.StatusOK, rec.Code)
+		body, err := io.ReadAll(rec.Body)
+		s.NoError(err)
+		s.Equal("test", string(body))
 	})
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("testBody"))
-	req.Header.Set(echo.HeaderContentType, echo.MIMETextPlain)
-	req.Header.Set("testHeader", "test")
-	rec := httptest.NewRecorder()
-	s.e.ServeHTTP(rec, req)
-	s.Equal(http.StatusOK, rec.Code)
-	body, err := io.ReadAll(rec.Body)
-	s.NoError(err)
-	s.Equal("test", string(body))
 }
 
 func TestMiddleware(t *testing.T) {
