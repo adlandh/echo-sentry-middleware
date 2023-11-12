@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/adlandh/response-dumper"
 	"github.com/getsentry/sentry-go"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -81,7 +82,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 	}
 }
 
-func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper *responseDumper) {
+func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper *response.Dumper) {
 	setTag(span, "request_id", getRequestID(c))
 	setTag(span, "resp.status", strconv.Itoa(c.Response().Status))
 
@@ -98,7 +99,7 @@ func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper
 	}
 }
 
-func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *http.Request) *responseDumper {
+func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *http.Request) *response.Dumper {
 	if username, _, ok := request.BasicAuth(); ok {
 		setTag(span, "user", username)
 	}
@@ -116,7 +117,7 @@ func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *ht
 	}
 
 	// Dump request & response body
-	var respDumper *responseDumper
+	var respDumper *response.Dumper
 
 	if config.IsBodyDump {
 		// request
@@ -131,7 +132,7 @@ func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *ht
 		}
 
 		// response
-		respDumper = newResponseDumper(c.Response())
+		respDumper = response.NewDumper(c.Response())
 		c.Response().Writer = respDumper
 	}
 
