@@ -11,20 +11,24 @@ func prepareTagValue(str string) string {
 	size := 200 // limit of sentry
 
 	str = strings.ReplaceAll(str, "\n", " ") // no \n in strings
-	if len(str) > size {
-		return str[:size-3] + "..."
+	result := []rune(str)
+
+	if len(result) <= size {
+		return str
 	}
 
-	return str
+	return string(result[:size-3]) + "..."
 }
 
 func prepareTagName(str string) string {
 	size := 32 // limit of sentry
-	if len(str) > size {
-		return str[:size]
+	result := []rune(str)
+
+	if len(result) <= size {
+		return str
 	}
 
-	return str
+	return string(result[:size])
 }
 
 func setTag(span *sentry.Span, tag, value string) {
