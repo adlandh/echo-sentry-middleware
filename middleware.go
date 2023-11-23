@@ -49,7 +49,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			if config.Skipper(c) {
+			if config.Skipper(c) || c.Request() == nil || c.Response() == nil {
 				return next(c)
 			}
 
