@@ -4,7 +4,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,29 +16,36 @@ import (
 )
 
 type TransportMock struct {
+	sync.Mutex
+	events []*sentry.Event
 }
 
 func (t *TransportMock) Configure(_ sentry.ClientOptions) {}
-func (t *TransportMock) SendEvent(_ *sentry.Event) {
+func (t *TransportMock) SendEvent(event *sentry.Event) {
+	t.Lock()
+	defer t.Unlock()
+	t.events = append(t.events, event)
 }
 func (t *TransportMock) Flush(_ time.Duration) bool {
+	clear(t.events)
 	return true
 }
 func (t *TransportMock) Events() []*sentry.Event {
-	return nil
+	t.Lock()
+	defer t.Unlock()
+	return t.events
 }
 
 type MiddlewareTestSuite struct {
 	suite.Suite
 	transport *TransportMock
-	client    *sentry.Client
 	e         *echo.Echo
 }
 
 func (s *MiddlewareTestSuite) SetupTest() {
 	var err error
 	s.transport = &TransportMock{}
-	s.client, err = sentry.NewClient(sentry.ClientOptions{
+	err = sentry.Init(sentry.ClientOptions{
 		EnableTracing: true,
 		Transport:     s.transport,
 	})
@@ -48,8 +57,9 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 	s.e.Use(Middleware())
 
 	s.Run("Test Get", func() {
+		var span *sentry.Span
 		s.e.GET("/", func(c echo.Context) error {
-			span := sentry.TransactionFromContext(c.Request().Context())
+			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
 			s.NotEmpty(span.Tags["client_ip"])
@@ -67,10 +77,13 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 		body, err := io.ReadAll(rec.Body)
 		s.NoError(err)
 		s.Equal("test", string(body))
+		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
+		s.Equal(strconv.Itoa(http.StatusOK), span.Tags["resp.status"])
 	})
 	s.Run("Test Post", func() {
+		var span *sentry.Span
 		s.e.POST("/", func(c echo.Context) error {
-			span := sentry.TransactionFromContext(c.Request().Context())
+			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
 			s.NotEmpty(span.Tags["client_ip"])
@@ -89,6 +102,8 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 		body, err := io.ReadAll(rec.Body)
 		s.NoError(err)
 		s.Equal("test", string(body))
+		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
+		s.Equal(strconv.Itoa(http.StatusOK), span.Tags["resp.status"])
 	})
 }
 
@@ -99,8 +114,9 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 	}))
 
 	s.Run("Test Get", func() {
+		var span *sentry.Span
 		s.e.GET("/", func(c echo.Context) error {
-			span := sentry.TransactionFromContext(c.Request().Context())
+			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
 			s.NotEmpty(span.Tags["client_ip"])
@@ -118,11 +134,15 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 		body, err := io.ReadAll(rec.Body)
 		s.NoError(err)
 		s.Equal("test", string(body))
+		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
+		s.Equal(strconv.Itoa(http.StatusOK), span.Tags["resp.status"])
+		s.Equal("test", span.Tags["resp.body"])
 	})
 
 	s.Run("Test Post", func() {
+		var span *sentry.Span
 		s.e.POST("/", func(c echo.Context) error {
-			span := sentry.TransactionFromContext(c.Request().Context())
+			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
 			s.NotEmpty(span.Tags["client_ip"])
@@ -141,6 +161,9 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 		body, err := io.ReadAll(rec.Body)
 		s.NoError(err)
 		s.Equal("test", string(body))
+		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
+		s.Equal(strconv.Itoa(http.StatusOK), span.Tags["resp.status"])
+		s.Equal("test", span.Tags["resp.body"])
 	})
 }
 

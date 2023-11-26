@@ -84,6 +84,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper *response.Dumper) {
 	setTag(span, "request_id", getRequestID(c))
+	span.Status = sentry.HTTPtoSpanStatus(c.Response().Status)
 	setTag(span, "resp.status", strconv.Itoa(c.Response().Status))
 
 	// Dump response headers
