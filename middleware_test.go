@@ -16,14 +16,14 @@ import (
 )
 
 type TransportMock struct {
-	sync.Mutex
+	lock   sync.Mutex
 	events []*sentry.Event
 }
 
-func (t *TransportMock) Configure(_ sentry.ClientOptions) {}
+func (*TransportMock) Configure(_ sentry.ClientOptions) {}
 func (t *TransportMock) SendEvent(event *sentry.Event) {
-	t.Lock()
-	defer t.Unlock()
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	t.events = append(t.events, event)
 }
 func (t *TransportMock) Flush(_ time.Duration) bool {
@@ -31,8 +31,8 @@ func (t *TransportMock) Flush(_ time.Duration) bool {
 	return true
 }
 func (t *TransportMock) Events() []*sentry.Event {
-	t.Lock()
-	defer t.Unlock()
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	return t.events
 }
 
