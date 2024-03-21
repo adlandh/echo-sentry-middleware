@@ -15,12 +15,18 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	contentTypeHeader = "req.header.Content-Type"
+	testHeader        = "req.header.Testheader"
+	respStatus        = "resp.status"
+)
+
 type TransportMock struct {
 	lock   sync.Mutex
 	events []*sentry.Event
 }
 
-func (*TransportMock) Configure(_ sentry.ClientOptions) {}
+func (*TransportMock) Configure(_ sentry.ClientOptions) { /* stub */ }
 func (t *TransportMock) SendEvent(event *sentry.Event) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -63,8 +69,8 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
 			s.NotEmpty(span.Tags["client_ip"])
-			s.Equal(echo.MIMEApplicationJSON, span.Tags["req.header.Content-Type"])
-			s.Equal("test", span.Tags["req.header.Testheader"])
+			s.Equal(echo.MIMEApplicationJSON, span.Tags[contentTypeHeader])
+			s.Equal("test", span.Tags[testHeader])
 			return c.String(http.StatusOK, "test")
 		})
 
@@ -78,7 +84,7 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 		s.NoError(err)
 		s.Equal("test", string(body))
 		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
-		s.Equal(strconv.Itoa(http.StatusOK), span.Tags["resp.status"])
+		s.Equal(strconv.Itoa(http.StatusOK), span.Tags[respStatus])
 	})
 	s.Run("Test Post", func() {
 		var span *sentry.Span
@@ -87,8 +93,8 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
 			s.NotEmpty(span.Tags["client_ip"])
-			s.Equal(echo.MIMETextPlain, span.Tags["req.header.Content-Type"])
-			s.Equal("test", span.Tags["req.header.Testheader"])
+			s.Equal(echo.MIMETextPlain, span.Tags[contentTypeHeader])
+			s.Equal("test", span.Tags[testHeader])
 			s.Empty(span.Tags["req.body"])
 			return c.String(http.StatusOK, "test")
 		})
@@ -103,7 +109,7 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 		s.NoError(err)
 		s.Equal("test", string(body))
 		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
-		s.Equal(strconv.Itoa(http.StatusOK), span.Tags["resp.status"])
+		s.Equal(strconv.Itoa(http.StatusOK), span.Tags[respStatus])
 	})
 }
 
@@ -120,8 +126,8 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
 			s.NotEmpty(span.Tags["client_ip"])
-			s.Equal(echo.MIMEApplicationJSON, span.Tags["req.header.Content-Type"])
-			s.Equal("test", span.Tags["req.header.Testheader"])
+			s.Equal(echo.MIMEApplicationJSON, span.Tags[contentTypeHeader])
+			s.Equal("test", span.Tags[testHeader])
 			return c.String(http.StatusOK, "test")
 		})
 
@@ -135,7 +141,7 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 		s.NoError(err)
 		s.Equal("test", string(body))
 		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
-		s.Equal(strconv.Itoa(http.StatusOK), span.Tags["resp.status"])
+		s.Equal(strconv.Itoa(http.StatusOK), span.Tags[respStatus])
 		s.Equal("test", span.Tags["resp.body"])
 	})
 
@@ -146,8 +152,8 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
 			s.NotEmpty(span.Tags["client_ip"])
-			s.Equal(echo.MIMETextPlain, span.Tags["req.header.Content-Type"])
-			s.Equal("test", span.Tags["req.header.Testheader"])
+			s.Equal(echo.MIMETextPlain, span.Tags[contentTypeHeader])
+			s.Equal("test", span.Tags[testHeader])
 			s.Equal("testBody", span.Tags["req.body"])
 			return c.String(http.StatusOK, "test")
 		})
@@ -162,7 +168,7 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 		s.NoError(err)
 		s.Equal("test", string(body))
 		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
-		s.Equal(strconv.Itoa(http.StatusOK), span.Tags["resp.status"])
+		s.Equal(strconv.Itoa(http.StatusOK), span.Tags[respStatus])
 		s.Equal("test", span.Tags["resp.body"])
 	})
 }
