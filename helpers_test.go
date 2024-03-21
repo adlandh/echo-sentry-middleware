@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_limitTagValue(t *testing.T) {
+func TestLimitTagValue(t *testing.T) {
 	tests := []struct {
 		name string
 		str  string
@@ -34,7 +34,7 @@ func Test_limitTagValue(t *testing.T) {
 	}
 }
 
-func Test_limitTagName(t *testing.T) {
+func TestLimitTagName(t *testing.T) {
 	tests := []struct {
 		name string
 		str  string
@@ -59,7 +59,7 @@ func Test_limitTagName(t *testing.T) {
 	}
 }
 
-func Test_getRequestID(t *testing.T) {
+func TestGetRequestID(t *testing.T) {
 	e := echo.New()
 
 	t.Run("token in header", func(t *testing.T) {
