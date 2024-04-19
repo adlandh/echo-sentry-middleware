@@ -133,7 +133,7 @@ func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *ht
 		}
 
 		// response
-		respDumper = response.NewDumper(c.Response())
+		respDumper = response.NewDumper(c.Response().Writer)
 		c.Response().Writer = respDumper
 	}
 

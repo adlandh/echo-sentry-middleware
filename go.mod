@@ -1,11 +1,13 @@
 module github.com/adlandh/echo-sentry-middleware
 
-go 1.21
+go 1.22
+
+toolchain go1.22.2
 
 require (
-	github.com/adlandh/response-dumper v1.0.1
+	github.com/adlandh/response-dumper v1.1.0
 	github.com/getsentry/sentry-go v0.27.0
-	github.com/labstack/echo/v4 v4.11.4
+	github.com/labstack/echo/v4 v4.12.0
 	github.com/stretchr/testify v1.9.0
 )
 
