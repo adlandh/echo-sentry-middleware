@@ -2,33 +2,55 @@ package echosentrymiddleware
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/labstack/echo/v4"
 )
 
+func limitString(str string, size int) string {
+	if len(str) <= size {
+		return str
+	}
+
+	bytes := []byte(str)
+
+	if len(bytes) <= size {
+		return str
+	}
+
+	validBytes := bytes[:size]
+	for !utf8.Valid(validBytes) {
+		validBytes = validBytes[:len(validBytes)-1]
+	}
+
+	return string(validBytes)
+}
+
+func limitStringWithDots(str string, size int) string {
+	if size <= 10 {
+		return limitString(str, size)
+	}
+
+	result := limitString(str, size-3)
+
+	if result == str {
+		return str
+	}
+
+	return result + "..."
+}
+
 func prepareTagValue(str string) string {
 	size := 200 // limit of sentry
 
 	str = strings.ReplaceAll(str, "\n", " ") // no \n in strings
-	result := []rune(str)
 
-	if len(result) <= size {
-		return str
-	}
-
-	return string(result[:size-3]) + "..."
+	return limitStringWithDots(str, size)
 }
 
 func prepareTagName(str string) string {
-	size := 32 // limit of sentry
-	result := []rune(str)
-
-	if len(result) <= size {
-		return str
-	}
-
-	return string(result[:size])
+	return limitString(str, 32)
 }
 
 func setTag(span *sentry.Span, tag, value string) {
