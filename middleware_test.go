@@ -117,6 +117,12 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 	s.e.Use(MiddlewareWithConfig(SentryConfig{
 		AreHeadersDump: true,
 		IsBodyDump:     true,
+		BodySkipper: func(context echo.Context) (skipReqBody bool, skipRespBody bool) {
+			if context.Request().Header.Get(echo.HeaderContentType) == "skip it" {
+				return true, true
+			}
+			return false, false
+		},
 	}))
 
 	s.Run("Test Get", func() {
@@ -170,6 +176,30 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
 		s.Equal(strconv.Itoa(http.StatusOK), span.Tags[respStatus])
 		s.Equal("test", span.Tags["resp.body"])
+	})
+
+	s.Run("Test Skip Body", func() {
+		var span *sentry.Span
+		s.e.POST("/", func(c echo.Context) error {
+			span = sentry.TransactionFromContext(c.Request().Context())
+			s.NotNil(span)
+			s.NotEmpty(span.SpanID)
+			s.NotEmpty(span.Tags["client_ip"])
+			s.Equal("[excluded]", span.Tags["req.body"])
+			return c.String(http.StatusOK, "test")
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("testBody"))
+		req.Header.Set(echo.HeaderContentType, "skip it")
+		rec := httptest.NewRecorder()
+		s.e.ServeHTTP(rec, req)
+		s.Equal(http.StatusOK, rec.Code)
+		body, err := io.ReadAll(rec.Body)
+		s.NoError(err)
+		s.Equal("test", string(body))
+		s.Equal(sentry.HTTPtoSpanStatus(http.StatusOK), span.Status)
+		s.Equal(strconv.Itoa(http.StatusOK), span.Tags[respStatus])
+		s.Equal("[excluded]", span.Tags["resp.body"])
 	})
 }
 

@@ -13,11 +13,20 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 )
 
+type BodySkipper func(echo.Context) (skipReqBody bool, skipRespBody bool)
+
+func defaultBodySkipper(echo.Context) (skipReqBody bool, skipRespBody bool) {
+	return
+}
+
 type (
 	// SentryConfig defines the config for Sentry Performance middleware.
 	SentryConfig struct {
 		// Skipper defines a function to skip middleware.
 		Skipper middleware.Skipper
+
+		// BodySkipper defines a function to exclude body from logging
+		BodySkipper BodySkipper
 
 		// add req headers & resp headers to tracing tags
 		AreHeadersDump bool
@@ -45,6 +54,10 @@ func Middleware() echo.MiddlewareFunc {
 func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 	if config.Skipper == nil {
 		config.Skipper = middleware.DefaultSkipper
+	}
+
+	if config.BodySkipper == nil {
+		config.BodySkipper = defaultBodySkipper
 	}
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -96,7 +109,14 @@ func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper
 
 	// Dump response body
 	if config.IsBodyDump {
-		setTag(span, "resp.body", respDumper.GetResponse())
+		respBody := respDumper.GetResponse()
+
+		_, skipRespBody := config.BodySkipper(c)
+		if respBody != "" && skipRespBody {
+			respBody = "[excluded]"
+		}
+
+		setTag(span, "resp.body", respBody)
 	}
 }
 
@@ -123,13 +143,19 @@ func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *ht
 	if config.IsBodyDump {
 		// request
 		if request.Body != nil {
-			reqBody, err := io.ReadAll(request.Body)
-			if err == nil {
-				setTag(span, "req.body", string(reqBody))
+			reqBody := []byte("[excluded]")
 
-				_ = request.Body.Close()
-				request.Body = io.NopCloser(bytes.NewBuffer(reqBody)) // reset original request body
+			if skipReqBody, _ := config.BodySkipper(c); !skipReqBody {
+				var err error
+
+				reqBody, err = io.ReadAll(request.Body)
+				if err == nil {
+					_ = request.Body.Close()
+					request.Body = io.NopCloser(bytes.NewBuffer(reqBody)) // reset original request body
+				}
 			}
+
+			setTag(span, "req.body", string(reqBody))
 		}
 
 		// response
