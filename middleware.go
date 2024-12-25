@@ -76,7 +76,9 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 			setTag(span, "request_uri", request.RequestURI)
 			setTag(span, "path", c.Path())
 
-			respDumper := dumpReq(c, config, span, request)
+			skipReqBody, skipRespBody := config.BodySkipper(c)
+
+			respDumper := dumpReq(c, config, span, request, skipReqBody)
 
 			// setup request context - add span
 			c.SetRequest(request.WithContext(ctx))
@@ -88,14 +90,14 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 				c.Error(err) // call custom registered error handler
 			}
 
-			dumpResp(c, config, span, respDumper)
+			dumpResp(c, config, span, respDumper, skipRespBody)
 
 			return err
 		}
 	}
 }
 
-func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper *response.Dumper) {
+func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper *response.Dumper, skipRespBody bool) {
 	setTag(span, "request_id", getRequestID(c))
 	span.Status = sentry.HTTPtoSpanStatus(c.Response().Status)
 	setTag(span, "resp.status", strconv.Itoa(c.Response().Status))
@@ -111,7 +113,6 @@ func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper
 	if config.IsBodyDump {
 		respBody := respDumper.GetResponse()
 
-		_, skipRespBody := config.BodySkipper(c)
 		if respBody != "" && skipRespBody {
 			respBody = "[excluded]"
 		}
@@ -120,7 +121,7 @@ func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper
 	}
 }
 
-func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *http.Request) *response.Dumper {
+func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *http.Request, skipReqBody bool) *response.Dumper {
 	if username, _, ok := request.BasicAuth(); ok {
 		setTag(span, "user", username)
 	}
@@ -145,7 +146,7 @@ func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *ht
 		if request.Body != nil {
 			reqBody := []byte("[excluded]")
 
-			if skipReqBody, _ := config.BodySkipper(c); !skipReqBody {
+			if !skipReqBody {
 				var err error
 
 				reqBody, err = io.ReadAll(request.Body)
