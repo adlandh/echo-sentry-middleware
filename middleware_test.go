@@ -28,10 +28,6 @@ type TransportMock struct {
 	events []*sentry.Event
 }
 
-func (t *TransportMock) Close() {
-	/* stub */
-}
-
 func (*TransportMock) Configure(_ sentry.ClientOptions) { /* stub */ }
 func (t *TransportMock) SendEvent(event *sentry.Event) {
 	t.lock.Lock()
@@ -46,6 +42,10 @@ func (t *TransportMock) Events() []*sentry.Event {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	return t.events
+}
+
+func (*TransportMock) Close() {
+	/* stub */
 }
 
 type MiddlewareTestSuite struct {
