@@ -21,6 +21,8 @@ const (
 	respStatus        = "resp.status"
 )
 
+var _ sentry.Transport = (*TransportMock)(nil)
+
 type TransportMock struct {
 	lock   sync.Mutex
 	events []*sentry.Event
@@ -40,6 +42,10 @@ func (t *TransportMock) Events() []*sentry.Event {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	return t.events
+}
+
+func (*TransportMock) Close() {
+	/* stub */
 }
 
 type MiddlewareTestSuite struct {
