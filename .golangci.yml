@@ -1,11 +1,10 @@
 run:
   timeout: 5m
   tests: false
-  go: "1.21"
+  go: "1.23"
 
 linters:
   disable-all: true
-  fix: true
   enable:
     - bodyclose
     - errcheck
