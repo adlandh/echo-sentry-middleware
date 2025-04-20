@@ -8,6 +8,13 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+const (
+	// MaxTagNameLength is the maximum length of a Sentry tag name
+	MaxTagNameLength = 32
+	// MaxTagValueLength is the maximum length of a Sentry tag value
+	MaxTagValueLength = 200
+)
+
 func limitString(str string, size int) string {
 	if len(str) <= size {
 		return str
@@ -42,15 +49,13 @@ func limitStringWithDots(str string, size int) string {
 }
 
 func prepareTagValue(str string) string {
-	size := 200 // limit of sentry
-
 	str = strings.ReplaceAll(str, "\n", " ") // no \n in strings
 
-	return limitStringWithDots(str, size)
+	return limitStringWithDots(str, MaxTagValueLength)
 }
 
 func prepareTagName(str string) string {
-	return limitString(str, 32)
+	return limitString(str, MaxTagNameLength)
 }
 
 func setTag(span *sentry.Span, tag, value string) {
