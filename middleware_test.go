@@ -212,3 +212,84 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 func TestMiddleware(t *testing.T) {
 	suite.Run(t, new(MiddlewareTestSuite))
 }
+
+const (
+	userID       = "123"
+	userEndpoint = "/user/:id"
+	userURL      = "/user/" + userID
+)
+
+func BenchmarkWithMiddleware(b *testing.B) {
+	router := echo.New()
+	router.Use(Middleware())
+	router.GET(userEndpoint, func(c echo.Context) error {
+		id := c.Param("id")
+		return c.String(http.StatusOK, id)
+	})
+
+	r := httptest.NewRequest("GET", userURL, nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// do and verify the request
+		router.ServeHTTP(w, r)
+	}
+}
+
+func BenchmarkWithMiddlewareWithNoBodyNoHeaders(b *testing.B) {
+	router := echo.New()
+	router.Use(MiddlewareWithConfig(SentryConfig{AreHeadersDump: false}))
+	router.GET(userEndpoint, func(c echo.Context) error {
+		id := c.Param("id")
+		return c.String(http.StatusOK, id)
+	})
+
+	r := httptest.NewRequest("GET", userURL, strings.NewReader("test"))
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// do and verify the request
+		router.ServeHTTP(w, r)
+	}
+}
+
+func BenchmarkWithMiddlewareWithBodyDump(b *testing.B) {
+	router := echo.New()
+	router.Use(MiddlewareWithConfig(SentryConfig{IsBodyDump: true}))
+	router.GET(userEndpoint, func(c echo.Context) error {
+		id := c.Param("id")
+		return c.String(http.StatusOK, id)
+	})
+
+	r := httptest.NewRequest("GET", userURL, strings.NewReader("test"))
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// do and verify the request
+		router.ServeHTTP(w, r)
+	}
+}
+
+func BenchmarkWithoutMiddleware(b *testing.B) {
+	router := echo.New()
+	router.GET(userEndpoint, func(c echo.Context) error {
+		id := c.Param("id")
+		return c.String(http.StatusOK, id)
+	})
+
+	r := httptest.NewRequest("GET", userURL, nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// do and verify the request
+		router.ServeHTTP(w, r)
+	}
+}
