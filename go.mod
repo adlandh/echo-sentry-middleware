@@ -6,7 +6,7 @@ toolchain go1.24.1
 
 require (
 	github.com/adlandh/response-dumper v1.1.0
-	github.com/getsentry/sentry-go v0.32.0
+	github.com/getsentry/sentry-go v0.33.0
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/stretchr/testify v1.10.0
 )
