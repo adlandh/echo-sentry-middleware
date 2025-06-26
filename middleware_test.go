@@ -1,6 +1,7 @@
 package echosentrymiddleware
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +39,10 @@ func (t *TransportMock) Flush(_ time.Duration) bool {
 	clear(t.events)
 	return true
 }
+func (t *TransportMock) FlushWithContext(_ context.Context) bool {
+	return t.Flush(0)
+}
+
 func (t *TransportMock) Events() []*sentry.Event {
 	t.lock.Lock()
 	defer t.lock.Unlock()
