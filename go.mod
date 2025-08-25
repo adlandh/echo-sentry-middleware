@@ -8,7 +8,7 @@ require (
 	github.com/adlandh/response-dumper v1.1.1
 	github.com/getsentry/sentry-go v0.35.1
 	github.com/labstack/echo/v4 v4.13.4
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.0
 )
 
 require (
