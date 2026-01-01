@@ -38,7 +38,7 @@ func (e *errReadCloser) Read(_ []byte) (int, error) {
 	return 0, e.err
 }
 
-func (e *errReadCloser) Close() error {
+func (*errReadCloser) Close() error {
 	return nil
 }
 
@@ -98,7 +98,7 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 			return c.String(http.StatusOK, "test")
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		req.Header.Set("testHeader", "test")
 		rec := httptest.NewRecorder()
@@ -161,7 +161,7 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			return c.String(http.StatusOK, "test")
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		req.Header.Set("testHeader", "test")
 		rec := httptest.NewRecorder()
@@ -237,7 +237,7 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			return c.String(http.StatusOK, "test")
 		})
 
-		req := httptest.NewRequest(http.MethodPost, "/read-error", nil)
+		req := httptest.NewRequest(http.MethodPost, "/read-error", http.NoBody)
 		req.Body = body
 		req.Header.Set(echo.HeaderContentType, echo.MIMETextPlain)
 		rec := httptest.NewRecorder()
@@ -275,7 +275,7 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			return c.String(http.StatusOK, largeBody)
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/large-resp", nil)
+		req := httptest.NewRequest(http.MethodGet, "/large-resp", http.NoBody)
 		rec := httptest.NewRecorder()
 		s.e.ServeHTTP(rec, req)
 		s.Equal(http.StatusOK, rec.Code)
@@ -301,7 +301,7 @@ func BenchmarkWithMiddleware(b *testing.B) {
 		return c.String(http.StatusOK, id)
 	})
 
-	r := httptest.NewRequest("GET", userURL, nil)
+	r := httptest.NewRequest("GET", userURL, http.NoBody)
 	w := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -357,7 +357,7 @@ func BenchmarkWithoutMiddleware(b *testing.B) {
 		return c.String(http.StatusOK, id)
 	})
 
-	r := httptest.NewRequest("GET", userURL, nil)
+	r := httptest.NewRequest("GET", userURL, http.NoBody)
 	w := httptest.NewRecorder()
 
 	b.ResetTimer()
