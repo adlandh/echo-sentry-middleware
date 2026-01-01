@@ -19,6 +19,7 @@ func limitString(str string, size int) string {
 	if size <= 0 {
 		return str
 	}
+
 	if len(str) <= size {
 		return str
 	}
@@ -35,9 +36,11 @@ func limitString(str string, size int) string {
 
 func limitStringWithDots(str string, size int) string {
 	const minDotsLimit = 10
+
 	if size <= 0 {
 		return str
 	}
+
 	if size <= minDotsLimit {
 		return limitString(str, size)
 	}

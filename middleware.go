@@ -189,14 +189,16 @@ func captureRequestBody(request *http.Request, span *sentry.Span, skipReqBody bo
 	reqBody := []byte("[excluded]")
 
 	if !skipReqBody {
-		var err error
-
+		originalBody := request.Body
 		bodyBytes, err := io.ReadAll(request.Body)
-		_ = request.Body.Close()
-		// Reset original request body so it can be read again by handlers
-		request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		if err == nil {
+			_ = request.Body.Close()
+			// Reset original request body so it can be read again by handlers
+			request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 			reqBody = bodyBytes
+		} else {
+			request.Body = originalBody
+			reqBody = []byte("[read_error]")
 		}
 	}
 
