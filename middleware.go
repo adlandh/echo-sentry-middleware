@@ -78,7 +78,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 			skipReqBody, skipRespBody := config.BodySkipper(c)
 
-			respDumper := dumpReq(c, config, span, request, skipReqBody)
+			respDumper := dumpReq(c, config, span, request, skipReqBody, skipRespBody)
 
 			// setup request context - add span
 			c.SetRequest(request.WithContext(ctx))
@@ -113,8 +113,12 @@ func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper
 	}
 
 	// Dump response body if enabled
-	if config.IsBodyDump && respDumper != nil {
-		captureResponseBody(respDumper, span, skipRespBody)
+	if config.IsBodyDump {
+		if respDumper != nil {
+			captureResponseBody(respDumper, span, skipRespBody)
+		} else if skipRespBody {
+			setTag(span, "resp.body", "[excluded]")
+		}
 	}
 }
 
@@ -133,12 +137,16 @@ func captureResponseBody(respDumper *response.Dumper, span *sentry.Span, skipRes
 		respBody = "[excluded]"
 	}
 
+	if !skipRespBody {
+		respBody = limitStringWithDots(respBody, MaxTagValueLength)
+	}
+
 	setTag(span, "resp.body", respBody)
 }
 
 // dumpReq captures request information and adds it to the Sentry span.
 // It returns a response dumper if body dumping is enabled.
-func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *http.Request, skipReqBody bool) *response.Dumper {
+func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *http.Request, skipReqBody bool, skipRespBody bool) *response.Dumper {
 	// Add basic auth username if present
 	if username, _, ok := request.BasicAuth(); ok {
 		setTag(span, "user", username)
@@ -167,8 +175,10 @@ func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *ht
 		}
 
 		// Set up response body capture
-		respDumper = response.NewDumper(c.Response().Writer)
-		c.Response().Writer = respDumper
+		if !skipRespBody {
+			respDumper = response.NewDumper(c.Response().Writer)
+			c.Response().Writer = respDumper
+		}
 	}
 
 	return respDumper
@@ -181,11 +191,12 @@ func captureRequestBody(request *http.Request, span *sentry.Span, skipReqBody bo
 	if !skipReqBody {
 		var err error
 
-		reqBody, err = io.ReadAll(request.Body)
+		bodyBytes, err := io.ReadAll(request.Body)
+		_ = request.Body.Close()
+		// Reset original request body so it can be read again by handlers
+		request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		if err == nil {
-			_ = request.Body.Close()
-			// Reset original request body so it can be read again by handlers
-			request.Body = io.NopCloser(bytes.NewBuffer(reqBody))
+			reqBody = bodyBytes
 		}
 	}
 
@@ -216,7 +227,7 @@ func createSpan(c echo.Context) (*http.Request, *sentry.Span, func()) {
 		c.SetRequest(request)
 
 		// Finish the span
-		defer span.Finish()
+		span.Finish()
 	}
 
 	return request, span, cleanupFunc

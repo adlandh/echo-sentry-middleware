@@ -212,6 +212,42 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 		s.Equal(strconv.Itoa(http.StatusOK), span.Tags[respStatus])
 		s.Equal("[excluded]", span.Tags["resp.body"])
 	})
+
+	s.Run("Test Large Request Body", func() {
+		var span *sentry.Span
+		largeBody := strings.Repeat("a", MaxTagValueLength+20)
+		s.e.POST("/large", func(c echo.Context) error {
+			span = sentry.TransactionFromContext(c.Request().Context())
+			s.NotNil(span)
+			body, err := io.ReadAll(c.Request().Body)
+			s.NoError(err)
+			s.Equal(largeBody, string(body))
+			return c.String(http.StatusOK, "test")
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/large", strings.NewReader(largeBody))
+		req.Header.Set(echo.HeaderContentType, echo.MIMETextPlain)
+		rec := httptest.NewRecorder()
+		s.e.ServeHTTP(rec, req)
+		s.Equal(http.StatusOK, rec.Code)
+		s.Equal(prepareTagValue(largeBody), span.Tags["req.body"])
+	})
+
+	s.Run("Test Large Response Body", func() {
+		var span *sentry.Span
+		largeBody := strings.Repeat("b", MaxTagValueLength+20)
+		s.e.GET("/large-resp", func(c echo.Context) error {
+			span = sentry.TransactionFromContext(c.Request().Context())
+			s.NotNil(span)
+			return c.String(http.StatusOK, largeBody)
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/large-resp", nil)
+		rec := httptest.NewRecorder()
+		s.e.ServeHTTP(rec, req)
+		s.Equal(http.StatusOK, rec.Code)
+		s.Equal(prepareTagValue(largeBody), span.Tags["resp.body"])
+	})
 }
 
 func TestMiddleware(t *testing.T) {
