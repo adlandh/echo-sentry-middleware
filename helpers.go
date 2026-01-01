@@ -16,15 +16,15 @@ const (
 )
 
 func limitString(str string, size int) string {
+	if size <= 0 {
+		return str
+	}
+
 	if len(str) <= size {
 		return str
 	}
 
 	bytes := []byte(str)
-
-	if len(bytes) <= size {
-		return str
-	}
 
 	validBytes := bytes[:size]
 	for !utf8.Valid(validBytes) {
@@ -35,7 +35,13 @@ func limitString(str string, size int) string {
 }
 
 func limitStringWithDots(str string, size int) string {
-	if size <= 10 {
+	const minDotsLimit = 10
+
+	if size <= 0 {
+		return str
+	}
+
+	if size <= minDotsLimit {
 		return limitString(str, size)
 	}
 
@@ -49,7 +55,7 @@ func limitStringWithDots(str string, size int) string {
 }
 
 func prepareTagValue(str string) string {
-	str = strings.ReplaceAll(str, "\n", " ") // no \n in strings
+	str = strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(str) // no line breaks in tags
 
 	return limitStringWithDots(str, MaxTagValueLength)
 }
