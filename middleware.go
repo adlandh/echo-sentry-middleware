@@ -190,6 +190,7 @@ func captureRequestBody(request *http.Request, span *sentry.Span, skipReqBody bo
 
 	if !skipReqBody {
 		originalBody := request.Body
+
 		bodyBytes, err := io.ReadAll(request.Body)
 		if err == nil {
 			_ = request.Body.Close()
