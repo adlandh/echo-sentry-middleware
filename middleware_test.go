@@ -2,6 +2,7 @@ package echosentrymiddleware
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,18 @@ var _ sentry.Transport = (*TransportMock)(nil)
 type TransportMock struct {
 	lock   sync.Mutex
 	events []*sentry.Event
+}
+
+type errReadCloser struct {
+	err error
+}
+
+func (e *errReadCloser) Read(_ []byte) (int, error) {
+	return 0, e.err
+}
+
+func (*errReadCloser) Close() error {
+	return nil
 }
 
 func (*TransportMock) Configure(_ sentry.ClientOptions) { /* stub */ }
@@ -85,7 +98,7 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 			return c.String(http.StatusOK, "test")
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		req.Header.Set("testHeader", "test")
 		rec := httptest.NewRecorder()
@@ -148,7 +161,7 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			return c.String(http.StatusOK, "test")
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		req.Header.Set("testHeader", "test")
 		rec := httptest.NewRecorder()
@@ -213,6 +226,26 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 		s.Equal("[excluded]", span.Tags["resp.body"])
 	})
 
+	s.Run("Test Request Body Read Error", func() {
+		readErr := errors.New("read failed")
+		body := &errReadCloser{err: readErr}
+		var span *sentry.Span
+		s.e.POST("/read-error", func(c echo.Context) error {
+			span = sentry.TransactionFromContext(c.Request().Context())
+			s.NotNil(span)
+			s.Same(body, c.Request().Body)
+			return c.String(http.StatusOK, "test")
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/read-error", http.NoBody)
+		req.Body = body
+		req.Header.Set(echo.HeaderContentType, echo.MIMETextPlain)
+		rec := httptest.NewRecorder()
+		s.e.ServeHTTP(rec, req)
+		s.Equal(http.StatusOK, rec.Code)
+		s.Equal("[read_error]", span.Tags["req.body"])
+	})
+
 	s.Run("Test Large Request Body", func() {
 		var span *sentry.Span
 		largeBody := strings.Repeat("a", MaxTagValueLength+20)
@@ -242,7 +275,7 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			return c.String(http.StatusOK, largeBody)
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/large-resp", nil)
+		req := httptest.NewRequest(http.MethodGet, "/large-resp", http.NoBody)
 		rec := httptest.NewRecorder()
 		s.e.ServeHTTP(rec, req)
 		s.Equal(http.StatusOK, rec.Code)
@@ -268,7 +301,7 @@ func BenchmarkWithMiddleware(b *testing.B) {
 		return c.String(http.StatusOK, id)
 	})
 
-	r := httptest.NewRequest("GET", userURL, nil)
+	r := httptest.NewRequest("GET", userURL, http.NoBody)
 	w := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -324,7 +357,7 @@ func BenchmarkWithoutMiddleware(b *testing.B) {
 		return c.String(http.StatusOK, id)
 	})
 
-	r := httptest.NewRequest("GET", userURL, nil)
+	r := httptest.NewRequest("GET", userURL, http.NoBody)
 	w := httptest.NewRecorder()
 
 	b.ResetTimer()

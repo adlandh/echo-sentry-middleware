@@ -4,8 +4,8 @@ go 1.25
 
 require (
 	github.com/adlandh/response-dumper v1.2.0
-	github.com/getsentry/sentry-go v0.40.0
-	github.com/labstack/echo/v4 v4.14.0
+	github.com/getsentry/sentry-go v0.41.0
+	github.com/labstack/echo/v4 v4.15.0
 	github.com/stretchr/testify v1.11.1
 )
 
