@@ -9,13 +9,13 @@ import (
 
 	"github.com/adlandh/response-dumper"
 	"github.com/getsentry/sentry-go"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 )
 
-type BodySkipper func(echo.Context) (skipReqBody bool, skipRespBody bool)
+type BodySkipper func(*echo.Context) (skipReqBody bool, skipRespBody bool)
 
-func defaultBodySkipper(echo.Context) (skipReqBody bool, skipRespBody bool) {
+func defaultBodySkipper(*echo.Context) (skipReqBody bool, skipRespBody bool) {
 	return
 }
 
@@ -61,7 +61,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 	}
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			if config.Skipper(c) || c.Request() == nil || c.Response() == nil {
 				return next(c)
 			}
@@ -87,7 +87,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 			err := next(c)
 			if err != nil {
 				setTag(span, "echo.error", err.Error())
-				c.Error(err) // call custom registered error handler
+				c.Echo().HTTPErrorHandler(c, err) // call custom registered error handler
 			}
 
 			dumpResp(c, config, span, respDumper, skipRespBody)
@@ -98,17 +98,24 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 }
 
 // dumpResp captures response information and adds it to the Sentry span.
-func dumpResp(c echo.Context, config SentryConfig, span *sentry.Span, respDumper *response.Dumper, skipRespBody bool) {
+func dumpResp(c *echo.Context, config SentryConfig, span *sentry.Span, respDumper *response.Dumper, skipRespBody bool) {
 	// Add request ID to span
 	setTag(span, "request_id", getRequestID(c))
 
 	// Set span status based on HTTP response status
-	response := c.Response()
-	span.Status = sentry.HTTPtoSpanStatus(response.Status)
-	setTag(span, "resp.status", strconv.Itoa(response.Status))
+	responseWriter := c.Response()
+
+	response, err := echo.UnwrapResponse(responseWriter)
+	if err != nil {
+		span.Status = sentry.HTTPtoSpanStatus(http.StatusInternalServerError)
+		setTag(span, "resp.status", strconv.Itoa(http.StatusInternalServerError))
+	} else {
+		span.Status = sentry.HTTPtoSpanStatus(response.Status)
+		setTag(span, "resp.status", strconv.Itoa(response.Status))
+	}
 
 	// Dump response headers if enabled
-	if config.AreHeadersDump {
+	if config.AreHeadersDump && err == nil {
 		captureResponseHeaders(response, span)
 	}
 
@@ -146,15 +153,15 @@ func captureResponseBody(respDumper *response.Dumper, span *sentry.Span, skipRes
 
 // dumpReq captures request information and adds it to the Sentry span.
 // It returns a response dumper if body dumping is enabled.
-func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *http.Request, skipReqBody bool, skipRespBody bool) *response.Dumper {
+func dumpReq(c *echo.Context, config SentryConfig, span *sentry.Span, request *http.Request, skipReqBody bool, skipRespBody bool) *response.Dumper {
 	// Add basic auth username if present
 	if username, _, ok := request.BasicAuth(); ok {
 		setTag(span, "user", username)
 	}
 
 	// Add path parameters
-	for _, paramName := range c.ParamNames() {
-		setTag(span, "path."+paramName, c.Param(paramName))
+	for _, param := range c.PathValues() {
+		setTag(span, "path."+param.Name, param.Value)
 	}
 
 	// Dump request headers if enabled
@@ -176,8 +183,8 @@ func dumpReq(c echo.Context, config SentryConfig, span *sentry.Span, request *ht
 
 		// Set up response body capture
 		if !skipRespBody {
-			respDumper = response.NewDumper(c.Response().Writer)
-			c.Response().Writer = respDumper
+			respDumper = response.NewDumper(c.Response())
+			c.SetResponse(respDumper)
 		}
 	}
 
@@ -210,7 +217,7 @@ func captureRequestBody(request *http.Request, span *sentry.Span, skipReqBody bo
 // - the original HTTP request
 // - the created Sentry span
 // - a cleanup function that restores the original context and finishes the span
-func createSpan(c echo.Context) (*http.Request, *sentry.Span, func()) {
+func createSpan(c *echo.Context) (*http.Request, *sentry.Span, func()) {
 	request := c.Request()
 	originalContext := request.Context()
 

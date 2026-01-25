@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -84,11 +84,12 @@ func (s *MiddlewareTestSuite) SetupTest() {
 }
 
 func (s *MiddlewareTestSuite) TestMiddleware() {
-	s.e.Use(Middleware())
-
 	s.Run("Test Get", func() {
+		s.e = echo.New()
+		s.e.Use(Middleware())
+
 		var span *sentry.Span
-		s.e.GET("/", func(c echo.Context) error {
+		s.e.GET("/", func(c *echo.Context) error {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
@@ -111,8 +112,11 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 		s.Equal(strconv.Itoa(http.StatusOK), span.Tags[respStatus])
 	})
 	s.Run("Test Post", func() {
+		s.e = echo.New()
+		s.e.Use(Middleware())
+
 		var span *sentry.Span
-		s.e.POST("/", func(c echo.Context) error {
+		s.e.POST("/", func(c *echo.Context) error {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
@@ -138,20 +142,23 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 }
 
 func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
-	s.e.Use(MiddlewareWithConfig(SentryConfig{
+	config := SentryConfig{
 		AreHeadersDump: true,
 		IsBodyDump:     true,
-		BodySkipper: func(context echo.Context) (skipReqBody bool, skipRespBody bool) {
+		BodySkipper: func(context *echo.Context) (skipReqBody bool, skipRespBody bool) {
 			if context.Request().Header.Get(echo.HeaderContentType) == "skip it" {
 				return true, true
 			}
 			return false, false
 		},
-	}))
+	}
 
 	s.Run("Test Get", func() {
+		s.e = echo.New()
+		s.e.Use(MiddlewareWithConfig(config))
+
 		var span *sentry.Span
-		s.e.GET("/", func(c echo.Context) error {
+		s.e.GET("/", func(c *echo.Context) error {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
@@ -176,8 +183,11 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 	})
 
 	s.Run("Test Post", func() {
+		s.e = echo.New()
+		s.e.Use(MiddlewareWithConfig(config))
+
 		var span *sentry.Span
-		s.e.POST("/", func(c echo.Context) error {
+		s.e.POST("/", func(c *echo.Context) error {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
@@ -203,8 +213,11 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 	})
 
 	s.Run("Test Skip Body", func() {
+		s.e = echo.New()
+		s.e.Use(MiddlewareWithConfig(config))
+
 		var span *sentry.Span
-		s.e.POST("/", func(c echo.Context) error {
+		s.e.POST("/", func(c *echo.Context) error {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
@@ -227,10 +240,13 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 	})
 
 	s.Run("Test Request Body Read Error", func() {
+		s.e = echo.New()
+		s.e.Use(MiddlewareWithConfig(config))
+
 		readErr := errors.New("read failed")
 		body := &errReadCloser{err: readErr}
 		var span *sentry.Span
-		s.e.POST("/read-error", func(c echo.Context) error {
+		s.e.POST("/read-error", func(c *echo.Context) error {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.Same(body, c.Request().Body)
@@ -247,9 +263,12 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 	})
 
 	s.Run("Test Large Request Body", func() {
+		s.e = echo.New()
+		s.e.Use(MiddlewareWithConfig(config))
+
 		var span *sentry.Span
 		largeBody := strings.Repeat("a", MaxTagValueLength+20)
-		s.e.POST("/large", func(c echo.Context) error {
+		s.e.POST("/large", func(c *echo.Context) error {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			body, err := io.ReadAll(c.Request().Body)
@@ -267,9 +286,12 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 	})
 
 	s.Run("Test Large Response Body", func() {
+		s.e = echo.New()
+		s.e.Use(MiddlewareWithConfig(config))
+
 		var span *sentry.Span
 		largeBody := strings.Repeat("b", MaxTagValueLength+20)
-		s.e.GET("/large-resp", func(c echo.Context) error {
+		s.e.GET("/large-resp", func(c *echo.Context) error {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			return c.String(http.StatusOK, largeBody)
@@ -296,7 +318,7 @@ const (
 func BenchmarkWithMiddleware(b *testing.B) {
 	router := echo.New()
 	router.Use(Middleware())
-	router.GET(userEndpoint, func(c echo.Context) error {
+	router.GET(userEndpoint, func(c *echo.Context) error {
 		id := c.Param("id")
 		return c.String(http.StatusOK, id)
 	})
@@ -315,7 +337,7 @@ func BenchmarkWithMiddleware(b *testing.B) {
 func BenchmarkWithMiddlewareWithNoBodyNoHeaders(b *testing.B) {
 	router := echo.New()
 	router.Use(MiddlewareWithConfig(SentryConfig{AreHeadersDump: false}))
-	router.GET(userEndpoint, func(c echo.Context) error {
+	router.GET(userEndpoint, func(c *echo.Context) error {
 		id := c.Param("id")
 		return c.String(http.StatusOK, id)
 	})
@@ -334,7 +356,7 @@ func BenchmarkWithMiddlewareWithNoBodyNoHeaders(b *testing.B) {
 func BenchmarkWithMiddlewareWithBodyDump(b *testing.B) {
 	router := echo.New()
 	router.Use(MiddlewareWithConfig(SentryConfig{IsBodyDump: true}))
-	router.GET(userEndpoint, func(c echo.Context) error {
+	router.GET(userEndpoint, func(c *echo.Context) error {
 		id := c.Param("id")
 		return c.String(http.StatusOK, id)
 	})
@@ -352,7 +374,7 @@ func BenchmarkWithMiddlewareWithBodyDump(b *testing.B) {
 
 func BenchmarkWithoutMiddleware(b *testing.B) {
 	router := echo.New()
-	router.GET(userEndpoint, func(c echo.Context) error {
+	router.GET(userEndpoint, func(c *echo.Context) error {
 		id := c.Param("id")
 		return c.String(http.StatusOK, id)
 	})
