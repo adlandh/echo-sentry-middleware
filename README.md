@@ -12,7 +12,7 @@ Echo middleware for sending performance traces to Sentry. This middleware captur
 ## Installation
 
 ```shell
-go get github.com/adlandh/echo-sentry-middleware
+go get github.com/adlandh/echo-sentry-middleware/v2
 ```
 
 ## Usage
@@ -26,10 +26,10 @@ import (
 	"fmt"
 	"net/http"
 
-	echo_sentry_middleware "github.com/adlandh/echo-sentry-middleware"
+	echo_sentry_middleware "github.com/adlandh/echo-sentry-middleware/v2"
 	"github.com/getsentry/sentry-go"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 )
 
 func main() {

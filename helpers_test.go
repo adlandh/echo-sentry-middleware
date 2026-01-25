@@ -1,12 +1,13 @@
 package echosentrymiddleware
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +64,7 @@ func TestLimitTagName(t *testing.T) {
 func TestGetRequestID(t *testing.T) {
 	t.Run("token in header", func(t *testing.T) {
 		e := echo.New()
-		r := httptest.NewRequest(echo.GET, "/", nil)
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.Header.Set(echo.HeaderXRequestID, "test")
 		w := httptest.NewRecorder()
 		c := e.NewContext(r, w)
@@ -74,7 +75,7 @@ func TestGetRequestID(t *testing.T) {
 	t.Run("generate token", func(t *testing.T) {
 		e := echo.New()
 		e.Use(middleware.RequestID())
-		r := httptest.NewRequest(echo.GET, "/", nil)
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
 		c := e.NewContext(r, w)
 		e.ServeHTTP(w, r)
@@ -83,7 +84,7 @@ func TestGetRequestID(t *testing.T) {
 
 	t.Run("no token without middleware", func(t *testing.T) {
 		e := echo.New()
-		r := httptest.NewRequest(echo.GET, "/", nil)
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
 		c := e.NewContext(r, w)
 		e.ServeHTTP(w, r)
