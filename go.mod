@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/adlandh/response-dumper v1.2.1
 	github.com/getsentry/sentry-go v0.42.0
-	github.com/labstack/echo/v5 v5.0.1
+	github.com/labstack/echo/v5 v5.0.3
 	github.com/stretchr/testify v1.11.1
 )
 
