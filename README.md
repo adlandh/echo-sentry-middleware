@@ -1,4 +1,8 @@
-# echo-sentry-middleware
+# Echo Sentry Middleware
+[![Go Reference](https://pkg.go.dev/badge/github.com/adlandh/echo-sentry-middleware/v2.svg)](https://pkg.go.dev/github.com/adlandh/echo-sentry-middleware/v2)
+[![Go Report Card](https://goreportcard.com/badge/github.com/adlandh/echo-sentry-middleware/v2)](https://goreportcard.com/report/github.com/adlandh/echo-sentry-middleware/v2)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/adlandh/echo-sentry-middleware)](https://github.com/adlandh/echo-sentry-middleware)
+
 
 Echo middleware for sending performance traces to Sentry. This middleware captures HTTP request and response information and sends it to Sentry as spans, allowing you to monitor the performance of your Echo application.
 
