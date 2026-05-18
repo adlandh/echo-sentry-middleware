@@ -49,8 +49,8 @@ func TestLimitTagName(t *testing.T) {
 		},
 		{
 			name: "Long string",
-			str:  "05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AX",
-			want: "05Kj7z2AXCl603gMJu6B23z2sD05Kj7z",
+			str:  strings.Repeat("a", MaxTagNameLength+10),
+			want: strings.Repeat("a", MaxTagNameLength),
 		},
 	}
 	for _, tt := range tests {
@@ -117,7 +117,7 @@ func TestLimitTagNameEdgeCases(t *testing.T) {
 	})
 
 	t.Run("exactly max length", func(t *testing.T) {
-		input := "0123456789abcdef0123456789abcdef"
+		input := strings.Repeat("a", MaxTagNameLength)
 		require.Len(t, input, MaxTagNameLength)
 		require.Equal(t, input, prepareTagName(input))
 	})
