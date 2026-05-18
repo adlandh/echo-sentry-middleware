@@ -23,9 +23,10 @@ func limitString(str string, size int) string {
 	}
 
 	// Walk back at most utf8.UTFMax-1 bytes to the start of the last rune,
-	// so we never cut in the middle of a multi-byte sequence.
+	// so we never cut in the middle of a multi-byte sequence. size > 0 here
+	// (we returned above otherwise), so end never reaches 0.
 	end := size
-	for end > 0 && !utf8.RuneStart(str[end]) {
+	for !utf8.RuneStart(str[end]) {
 		end--
 	}
 
