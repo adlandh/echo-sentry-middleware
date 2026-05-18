@@ -1,12 +1,14 @@
 package echosentrymiddleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 	"github.com/stretchr/testify/require"
@@ -111,6 +113,16 @@ func TestLimitTagValueEdgeCases(t *testing.T) {
 		require.Equal(t, want, prepareTagValue(input))
 	})
 
+	t.Run("zero size returns input unchanged", func(t *testing.T) {
+		require.Equal(t, "hello", limitStringWithDots("hello", 0))
+		require.Equal(t, "hello", limitString("hello", 0))
+	})
+
+	t.Run("tiny size skips dot suffix", func(t *testing.T) {
+		// size <= minDotsLimit (10) triggers the no-dots branch.
+		require.Equal(t, "hello", limitStringWithDots("hello world", 5))
+	})
+
 	t.Run("truncation respects utf8 rune boundary", func(t *testing.T) {
 		// "世" is a 3-byte rune. Build a string that, when truncated at
 		// MaxTagValueLength-3 bytes (the room left for "..."), would split
@@ -120,6 +132,23 @@ func TestLimitTagValueEdgeCases(t *testing.T) {
 		got := prepareTagValue(input)
 		require.True(t, utf8.ValidString(got), "result must be valid UTF-8")
 		require.LessOrEqual(t, len(got), MaxTagValueLength)
+	})
+}
+
+func TestSetTag(t *testing.T) {
+	t.Run("empty tag is dropped", func(t *testing.T) {
+		span := sentry.StartSpan(context.Background(), "test")
+		defer span.Finish()
+		setTag(span, "", "value")
+		require.Empty(t, span.Tags)
+	})
+
+	t.Run("empty value is preserved", func(t *testing.T) {
+		span := sentry.StartSpan(context.Background(), "test")
+		defer span.Finish()
+		setTag(span, "k", "")
+		_, ok := span.Tags["k"]
+		require.True(t, ok, "empty value should still set the tag")
 	})
 }
 
