@@ -49,7 +49,9 @@ func (t *TransportMock) SendEvent(event *sentry.Event) {
 	t.events = append(t.events, event)
 }
 func (t *TransportMock) Flush(_ time.Duration) bool {
-	clear(t.events)
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.events = nil
 	return true
 }
 func (t *TransportMock) FlushWithContext(_ context.Context) bool {
@@ -315,7 +317,15 @@ const (
 	userURL      = "/user/" + userID
 )
 
+func benchSentryInit(b *testing.B) {
+	b.Helper()
+	if err := sentry.Init(sentry.ClientOptions{EnableTracing: true, Transport: &TransportMock{}}); err != nil {
+		b.Fatal(err)
+	}
+}
+
 func BenchmarkWithMiddleware(b *testing.B) {
+	benchSentryInit(b)
 	router := echo.New()
 	router.Use(Middleware())
 	router.GET(userEndpoint, func(c *echo.Context) error {
@@ -335,6 +345,7 @@ func BenchmarkWithMiddleware(b *testing.B) {
 }
 
 func BenchmarkWithMiddlewareWithNoBodyNoHeaders(b *testing.B) {
+	benchSentryInit(b)
 	router := echo.New()
 	router.Use(MiddlewareWithConfig(SentryConfig{AreHeadersDump: false}))
 	router.GET(userEndpoint, func(c *echo.Context) error {
@@ -354,6 +365,7 @@ func BenchmarkWithMiddlewareWithNoBodyNoHeaders(b *testing.B) {
 }
 
 func BenchmarkWithMiddlewareWithBodyDump(b *testing.B) {
+	benchSentryInit(b)
 	router := echo.New()
 	router.Use(MiddlewareWithConfig(SentryConfig{IsBodyDump: true}))
 	router.GET(userEndpoint, func(c *echo.Context) error {

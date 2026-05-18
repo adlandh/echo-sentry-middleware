@@ -9,29 +9,28 @@ import (
 )
 
 const (
-	// MaxTagNameLength is the maximum length of a Sentry tag name
-	MaxTagNameLength = 32
-	// MaxTagValueLength is the maximum length of a Sentry tag value
+	// MaxTagNameLength is the maximum length of a Sentry tag name.
+	MaxTagNameLength = 200
+	// MaxTagValueLength is the maximum length of a Sentry tag value.
 	MaxTagValueLength = 200
 )
 
+var tagValueReplacer = strings.NewReplacer("\n", " ", "\r", " ", "\t", " ")
+
 func limitString(str string, size int) string {
-	if size <= 0 {
+	if size <= 0 || len(str) <= size {
 		return str
 	}
 
-	if len(str) <= size {
-		return str
+	// Walk back at most utf8.UTFMax-1 bytes to the start of the last rune,
+	// so we never cut in the middle of a multi-byte sequence. size > 0 here
+	// (we returned above otherwise), so end never reaches 0.
+	end := size
+	for !utf8.RuneStart(str[end]) {
+		end--
 	}
 
-	bytes := []byte(str)
-
-	validBytes := bytes[:size]
-	for !utf8.Valid(validBytes) {
-		validBytes = validBytes[:len(validBytes)-1]
-	}
-
-	return string(validBytes)
+	return str[:end]
 }
 
 func limitStringWithDots(str string, size int) string {
@@ -55,7 +54,7 @@ func limitStringWithDots(str string, size int) string {
 }
 
 func prepareTagValue(str string) string {
-	str = strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(str) // no line breaks in tags
+	str = tagValueReplacer.Replace(str) // no line breaks in tags
 
 	return limitStringWithDots(str, MaxTagValueLength)
 }
@@ -65,7 +64,7 @@ func prepareTagName(str string) string {
 }
 
 func setTag(span *sentry.Span, tag, value string) {
-	if tag == "" || value == "" {
+	if tag == "" {
 		return
 	}
 

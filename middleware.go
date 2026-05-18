@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/adlandh/response-dumper"
 	"github.com/getsentry/sentry-go"
@@ -13,10 +14,12 @@ import (
 	"github.com/labstack/echo/v5/middleware"
 )
 
+// BodySkipper decides, per request, whether the request and/or response body
+// should be omitted from the span tags.
 type BodySkipper func(*echo.Context) (skipReqBody bool, skipRespBody bool)
 
-func defaultBodySkipper(*echo.Context) (skipReqBody bool, skipRespBody bool) {
-	return
+func defaultBodySkipper(*echo.Context) (bool, bool) {
+	return false, false
 }
 
 type (
@@ -62,7 +65,7 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
-			if config.Skipper(c) || c.Request() == nil || c.Response() == nil {
+			if config.Skipper(c) {
 				return next(c)
 			}
 
@@ -87,7 +90,6 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 			err := next(c)
 			if err != nil {
 				setTag(span, "echo.error", err.Error())
-				c.Echo().HTTPErrorHandler(c, err) // call custom registered error handler
 			}
 
 			dumpResp(c, config, span, respDumper, skipRespBody)
@@ -122,7 +124,7 @@ func dumpResp(c *echo.Context, config SentryConfig, span *sentry.Span, respDumpe
 	// Dump response body if enabled
 	if config.IsBodyDump {
 		if respDumper != nil {
-			captureResponseBody(respDumper, span, skipRespBody)
+			captureResponseBody(respDumper, span)
 		} else if skipRespBody {
 			setTag(span, "resp.body", "[excluded]")
 		}
@@ -131,25 +133,23 @@ func dumpResp(c *echo.Context, config SentryConfig, span *sentry.Span, respDumpe
 
 // captureResponseHeaders adds response headers to the span as tags
 func captureResponseHeaders(response *echo.Response, span *sentry.Span) {
-	for k := range response.Header() {
-		setTag(span, "resp.header."+k, response.Header().Get(k))
+	header := response.Header()
+	for k, v := range header {
+		setTag(span, "resp.header."+k, strings.Join(v, ", "))
 	}
 }
 
-// captureResponseBody adds the response body to the span as a tag
-func captureResponseBody(respDumper *response.Dumper, span *sentry.Span, skipRespBody bool) {
-	respBody := respDumper.GetResponse()
-
-	if respBody != "" && skipRespBody {
-		respBody = "[excluded]"
-	}
-
-	if !skipRespBody {
-		respBody = limitStringWithDots(respBody, MaxTagValueLength)
-	}
-
-	setTag(span, "resp.body", respBody)
+// captureResponseBody adds the response body to the span as a tag.
+// Only invoked when the body was actually dumped, so skipRespBody is always false here.
+func captureResponseBody(respDumper *response.Dumper, span *sentry.Span) {
+	setTag(span, "resp.body", limitStringWithDots(respDumper.GetResponse(), MaxTagValueLength))
 }
+
+// maxBodyCaptureBytes caps how much of the request/response body is read for the span tag.
+// The tag itself is further truncated to MaxTagValueLength; the extra headroom
+// leaves room for UTF-8 boundary trimming. Bytes beyond this cap stream through
+// to the handler unread (and uncaptured) instead of being buffered into memory.
+const maxBodyCaptureBytes = MaxTagValueLength * 4
 
 // dumpReq captures request information and adds it to the Sentry span.
 // It returns a response dumper if body dumping is enabled.
@@ -166,8 +166,8 @@ func dumpReq(c *echo.Context, config SentryConfig, span *sentry.Span, request *h
 
 	// Dump request headers if enabled
 	if config.AreHeadersDump {
-		for k := range request.Header {
-			setTag(span, "req.header."+k, request.Header.Get(k))
+		for k, v := range request.Header {
+			setTag(span, "req.header."+k, strings.Join(v, ", "))
 		}
 	}
 
@@ -183,7 +183,7 @@ func dumpReq(c *echo.Context, config SentryConfig, span *sentry.Span, request *h
 
 		// Set up response body capture
 		if !skipRespBody {
-			respDumper = response.NewDumper(c.Response())
+			respDumper = response.NewDumper(c.Response(), response.WithMaxBytes(maxBodyCaptureBytes))
 			c.SetResponse(respDumper)
 		}
 	}
@@ -191,19 +191,25 @@ func dumpReq(c *echo.Context, config SentryConfig, span *sentry.Span, request *h
 	return respDumper
 }
 
-// captureRequestBody reads the request body, adds it to the span, and resets the body for further processing
+// captureRequestBody reads up to maxBodyCaptureBytes of the request body for the
+// span tag, then replaces request.Body with a reader that re-emits the captured
+// prefix followed by the unread remainder so handlers see the full body.
 func captureRequestBody(request *http.Request, span *sentry.Span, skipReqBody bool) {
 	reqBody := []byte("[excluded]")
 
 	if !skipReqBody {
 		originalBody := request.Body
 
-		bodyBytes, err := io.ReadAll(request.Body)
+		captured, err := io.ReadAll(io.LimitReader(originalBody, maxBodyCaptureBytes))
 		if err == nil {
-			_ = request.Body.Close()
-			// Reset original request body so it can be read again by handlers
-			request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-			reqBody = bodyBytes
+			request.Body = struct {
+				io.Reader
+				io.Closer
+			}{
+				Reader: io.MultiReader(bytes.NewReader(captured), originalBody),
+				Closer: originalBody,
+			}
+			reqBody = captured
 		} else {
 			request.Body = originalBody
 			reqBody = []byte("[read_error]")
@@ -232,9 +238,10 @@ func createSpan(c *echo.Context) (*http.Request, *sentry.Span, func()) {
 
 	// Return the cleanup function that will be called when the middleware is done
 	cleanupFunc := func() {
-		// Restore the original context
-		request = request.WithContext(originalContext)
-		c.SetRequest(request)
+		// Restore the original context on whatever request the handler chain left in place,
+		// so downstream c.SetRequest(...) calls are preserved.
+		current := c.Request()
+		c.SetRequest(current.WithContext(originalContext))
 
 		// Finish the span
 		span.Finish()

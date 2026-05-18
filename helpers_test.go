@@ -1,11 +1,14 @@
 package echosentrymiddleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 	"github.com/stretchr/testify/require"
@@ -49,8 +52,8 @@ func TestLimitTagName(t *testing.T) {
 		},
 		{
 			name: "Long string",
-			str:  "05Kj7z2AXCl603gMJu6B23z2sD05Kj7z2AX",
-			want: "05Kj7z2AXCl603gMJu6B23z2sD05Kj7z",
+			str:  strings.Repeat("a", MaxTagNameLength+10),
+			want: strings.Repeat("a", MaxTagNameLength),
 		},
 	}
 	for _, tt := range tests {
@@ -109,6 +112,44 @@ func TestLimitTagValueEdgeCases(t *testing.T) {
 		want := "line1  line2 line3 line4"
 		require.Equal(t, want, prepareTagValue(input))
 	})
+
+	t.Run("zero size returns input unchanged", func(t *testing.T) {
+		require.Equal(t, "hello", limitStringWithDots("hello", 0))
+		require.Equal(t, "hello", limitString("hello", 0))
+	})
+
+	t.Run("tiny size skips dot suffix", func(t *testing.T) {
+		// size <= minDotsLimit (10) triggers the no-dots branch.
+		require.Equal(t, "hello", limitStringWithDots("hello world", 5))
+	})
+
+	t.Run("truncation respects utf8 rune boundary", func(t *testing.T) {
+		// "世" is a 3-byte rune. Build a string that, when truncated at
+		// MaxTagValueLength-3 bytes (the room left for "..."), would split
+		// the final rune mid-sequence if we cut blindly.
+		head := strings.Repeat("a", MaxTagValueLength-5)
+		input := head + "世xx" + strings.Repeat("b", 20)
+		got := prepareTagValue(input)
+		require.True(t, utf8.ValidString(got), "result must be valid UTF-8")
+		require.LessOrEqual(t, len(got), MaxTagValueLength)
+	})
+}
+
+func TestSetTag(t *testing.T) {
+	t.Run("empty tag is dropped", func(t *testing.T) {
+		span := sentry.StartSpan(context.Background(), "test")
+		defer span.Finish()
+		setTag(span, "", "value")
+		require.Empty(t, span.Tags)
+	})
+
+	t.Run("empty value is preserved", func(t *testing.T) {
+		span := sentry.StartSpan(context.Background(), "test")
+		defer span.Finish()
+		setTag(span, "k", "")
+		_, ok := span.Tags["k"]
+		require.True(t, ok, "empty value should still set the tag")
+	})
 }
 
 func TestLimitTagNameEdgeCases(t *testing.T) {
@@ -117,7 +158,7 @@ func TestLimitTagNameEdgeCases(t *testing.T) {
 	})
 
 	t.Run("exactly max length", func(t *testing.T) {
-		input := "0123456789abcdef0123456789abcdef"
+		input := strings.Repeat("a", MaxTagNameLength)
 		require.Len(t, input, MaxTagNameLength)
 		require.Equal(t, input, prepareTagName(input))
 	})
