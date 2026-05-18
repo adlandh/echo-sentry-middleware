@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -108,6 +109,17 @@ func TestLimitTagValueEdgeCases(t *testing.T) {
 		input := "line1\r\nline2\tline3\nline4"
 		want := "line1  line2 line3 line4"
 		require.Equal(t, want, prepareTagValue(input))
+	})
+
+	t.Run("truncation respects utf8 rune boundary", func(t *testing.T) {
+		// "世" is a 3-byte rune. Build a string that, when truncated at
+		// MaxTagValueLength-3 bytes (the room left for "..."), would split
+		// the final rune mid-sequence if we cut blindly.
+		head := strings.Repeat("a", MaxTagValueLength-5)
+		input := head + "世xx" + strings.Repeat("b", 20)
+		got := prepareTagValue(input)
+		require.True(t, utf8.ValidString(got), "result must be valid UTF-8")
+		require.LessOrEqual(t, len(got), MaxTagValueLength)
 	})
 }
 

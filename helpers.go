@@ -22,22 +22,11 @@ func limitString(str string, size int) string {
 		return str
 	}
 
-	// Walk back at most utf8.UTFMax-1 bytes to the start of the last rune.
+	// Walk back at most utf8.UTFMax-1 bytes to the start of the last rune,
+	// so we never cut in the middle of a multi-byte sequence.
 	end := size
 	for end > 0 && !utf8.RuneStart(str[end]) {
 		end--
-	}
-
-	// Confirm the trimmed prefix decodes cleanly; if the boundary rune is
-	// itself malformed, drop it.
-	if r, _ := utf8.DecodeLastRuneInString(str[:end]); r == utf8.RuneError {
-		for end > 0 && !utf8.RuneStart(str[end-1]) {
-			end--
-		}
-
-		if end > 0 {
-			end--
-		}
 	}
 
 	return str[:end]
