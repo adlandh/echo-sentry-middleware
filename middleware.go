@@ -86,32 +86,36 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 			}
 
 			request, span, hub := createSpan(c)
-			setTag(span, "path", c.Path())
+			request = request.WithContext(span.Context())
+			c.SetRequest(request)
 
-			skipReqBody, skipRespBody := config.BodySkipper(c)
-
-			respDumper := dumpReq(c, config, safeHeaders, span, request, skipReqBody, skipRespBody)
-
-			// setup request context - add span
-			c.SetRequest(request.WithContext(span.Context()))
+			var (
+				respDumper   *response.Dumper
+				skipRespBody = true
+			)
 
 			defer func() {
 				panicValue := recover()
 
-				statusOverride := 0
+				_, status := echo.ResolveResponseStatus(c.Response(), err)
 				if panicValue != nil {
-					statusOverride = http.StatusInternalServerError
+					status = http.StatusInternalServerError
 
 					hub.RecoverWithContext(c.Request().Context(), panicValue)
 				}
 
-				dumpResp(c, config, safeHeaders, span, respDumper, skipRespBody, err, statusOverride)
+				dumpResp(c, config, safeHeaders, span, respDumper, skipRespBody, status)
 				span.Finish()
 
 				if panicValue != nil {
 					panic(panicValue)
 				}
 			}()
+
+			setTag(span, "path", c.Path())
+
+			skipReqBody, skipRespBody := config.BodySkipper(c)
+			respDumper = dumpReq(c, config, safeHeaders, span, request, skipReqBody, skipRespBody)
 
 			// call next middleware / controller
 			return next(c)
@@ -120,22 +124,17 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 }
 
 // dumpResp captures response information and adds it to the Sentry span.
-func dumpResp(c *echo.Context, config SentryConfig, safeHeaders map[string]struct{}, span *sentry.Span, respDumper *response.Dumper, skipRespBody bool, handlerErr error, statusOverride int) {
+func dumpResp(c *echo.Context, config SentryConfig, safeHeaders map[string]struct{}, span *sentry.Span, respDumper *response.Dumper, skipRespBody bool, status int) {
 	// Add request ID to span
 	setTag(span, "request_id", getRequestID(c))
 
 	// Set span status based on HTTP response status
-	responseWriter, status := echo.ResolveResponseStatus(c.Response(), handlerErr)
-	if statusOverride != 0 {
-		status = statusOverride
-	}
-
 	span.Status = sentry.HTTPtoSpanStatus(status)
 	setTag(span, "resp.status", strconv.Itoa(status))
 
 	// Dump response headers if enabled
-	if config.AreHeadersDump && responseWriter != nil {
-		captureHeaders("resp.header.", responseWriter.Header(), safeHeaders, span)
+	if config.AreHeadersDump {
+		captureHeaders("resp.header.", c.Response().Header(), safeHeaders, span)
 	}
 
 	// Dump response body if enabled

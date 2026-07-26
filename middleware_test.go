@@ -445,6 +445,42 @@ func (s *MiddlewareTestSuite) TestErrorAndPanicStatus() {
 		}
 		s.True(capturedPanic)
 	})
+
+	s.Run("BodySkipper panic is captured and span is finished", func() {
+		s.e = echo.New()
+		s.transport.Flush(0)
+
+		var span *sentry.Span
+		var requestHub *sentry.Hub
+		s.e.Use(MiddlewareWithConfig(SentryConfig{
+			BodySkipper: func(c *echo.Context) (bool, bool) {
+				requestHub = sentry.GetHubFromContext(c.Request().Context())
+				span = sentry.TransactionFromContext(c.Request().Context())
+				panic("body skipper panic")
+			},
+		}))
+		s.e.GET("/", func(c *echo.Context) error {
+			return c.NoContent(http.StatusNoContent)
+		})
+
+		s.Panics(func() {
+			s.e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+		})
+
+		s.Require().NotNil(requestHub)
+		s.NotSame(sentry.CurrentHub(), requestHub)
+		s.Require().NotNil(span)
+		s.False(span.EndTime.IsZero())
+		s.Equal(sentry.HTTPtoSpanStatus(http.StatusInternalServerError), span.Status)
+		s.Equal(strconv.Itoa(http.StatusInternalServerError), span.Tags[respStatus])
+		events := s.transport.Events()
+		s.Require().NotEmpty(events)
+		capturedPanic := false
+		for _, event := range events {
+			capturedPanic = capturedPanic || len(event.Exception) > 0 || event.Message == "body skipper panic"
+		}
+		s.True(capturedPanic)
+	})
 }
 
 func (s *MiddlewareTestSuite) TestDownstreamContextIsPreserved() {
