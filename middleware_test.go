@@ -95,9 +95,8 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
-			s.NotEmpty(span.Tags["client_ip"])
-			s.Equal(echo.MIMEApplicationJSON, span.Tags[contentTypeHeader])
-			s.Equal("test", span.Tags[testHeader])
+			s.Empty(span.Tags[contentTypeHeader])
+			s.Empty(span.Tags[testHeader])
 			return c.String(http.StatusOK, "test")
 		})
 
@@ -122,9 +121,8 @@ func (s *MiddlewareTestSuite) TestMiddleware() {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
-			s.NotEmpty(span.Tags["client_ip"])
-			s.Equal(echo.MIMETextPlain, span.Tags[contentTypeHeader])
-			s.Equal("test", span.Tags[testHeader])
+			s.Empty(span.Tags[contentTypeHeader])
+			s.Empty(span.Tags[testHeader])
 			s.Empty(span.Tags["req.body"])
 			return c.String(http.StatusOK, "test")
 		})
@@ -164,9 +162,8 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
-			s.NotEmpty(span.Tags["client_ip"])
 			s.Equal(echo.MIMEApplicationJSON, span.Tags[contentTypeHeader])
-			s.Equal("test", span.Tags[testHeader])
+			s.Equal("[redacted]", span.Tags[testHeader])
 			return c.String(http.StatusOK, "test")
 		})
 
@@ -193,9 +190,8 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
-			s.NotEmpty(span.Tags["client_ip"])
 			s.Equal(echo.MIMETextPlain, span.Tags[contentTypeHeader])
-			s.Equal("test", span.Tags[testHeader])
+			s.Equal("[redacted]", span.Tags[testHeader])
 			s.Equal("testBody", span.Tags["req.body"])
 			return c.String(http.StatusOK, "test")
 		})
@@ -223,7 +219,6 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 			span = sentry.TransactionFromContext(c.Request().Context())
 			s.NotNil(span)
 			s.NotEmpty(span.SpanID)
-			s.NotEmpty(span.Tags["client_ip"])
 			s.Equal("[excluded]", span.Tags["req.body"])
 			return c.String(http.StatusOK, "test")
 		})
@@ -307,6 +302,161 @@ func (s *MiddlewareTestSuite) TestMiddlewareWithConfig() {
 	})
 }
 
+func (s *MiddlewareTestSuite) TestSensitiveDataIsNotCaptured() {
+	s.e.Use(MiddlewareWithConfig(SentryConfig{
+		AreHeadersDump: true,
+		SafeHeaders:    []string{"X-Safe"},
+	}))
+
+	var span *sentry.Span
+	s.e.GET("/user/:id", func(c *echo.Context) error {
+		span = sentry.TransactionFromContext(c.Request().Context())
+		c.Response().Header().Set("Set-Cookie", "session=response-secret")
+		c.Response().Header().Set("X-Auth-Token", "response-secret")
+		c.Response().Header().Set("X-Safe", "visible")
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/user/secret-id?token=query-secret", http.NoBody)
+	req.SetBasicAuth("secret-user", "secret-password")
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.Header.Set("Cookie", "session=request-secret")
+	req.Header.Set("X-Api-Key", "request-secret")
+	req.Header.Set("X-Refresh-Token", "request-secret")
+	rec := httptest.NewRecorder()
+	s.e.ServeHTTP(rec, req)
+
+	s.Require().NotNil(span)
+	s.Equal("HTTP GET /user/:id", span.Name)
+	s.Equal("/user/:id", span.Tags["path"])
+	s.NotContains(span.Tags, "request_uri")
+	s.NotContains(span.Tags, "client_ip")
+	s.NotContains(span.Tags, "remote_addr")
+	s.NotContains(span.Tags, "user")
+	s.NotContains(span.Tags, "path.id")
+	s.Equal("[redacted]", span.Tags["req.header.Authorization"])
+	s.Equal("[redacted]", span.Tags[contentTypeHeader])
+	s.Equal("[redacted]", span.Tags["req.header.Cookie"])
+	s.Equal("[redacted]", span.Tags["req.header.X-Api-Key"])
+	s.Equal("[redacted]", span.Tags["req.header.X-Refresh-Token"])
+	s.Equal("[redacted]", span.Tags["resp.header.Set-Cookie"])
+	s.Equal("[redacted]", span.Tags["resp.header.X-Auth-Token"])
+	s.Equal("visible", span.Tags["resp.header.X-Safe"])
+}
+
+func (s *MiddlewareTestSuite) TestBodyDumpRequiresExplicitOptIn() {
+	s.e.Use(MiddlewareWithConfig(SentryConfig{IsBodyDump: true}))
+
+	var span *sentry.Span
+	s.e.POST("/", func(c *echo.Context) error {
+		span = sentry.TransactionFromContext(c.Request().Context())
+		body, err := io.ReadAll(c.Request().Body)
+		s.Require().NoError(err)
+		s.Equal("request-secret", string(body))
+		return c.String(http.StatusOK, "response-secret")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("request-secret"))
+	rec := httptest.NewRecorder()
+	s.e.ServeHTTP(rec, req)
+
+	s.Require().NotNil(span)
+	s.Equal("[excluded]", span.Tags["req.body"])
+	s.Equal("[excluded]", span.Tags["resp.body"])
+}
+
+func (s *MiddlewareTestSuite) TestRequestHubIsolation() {
+	s.e.Use(Middleware())
+
+	hubs := make(chan *sentry.Hub, 2)
+	s.e.GET("/", func(c *echo.Context) error {
+		hubs <- sentry.GetHubFromContext(c.Request().Context())
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	var requests sync.WaitGroup
+	requests.Add(2)
+	for range 2 {
+		go func() {
+			defer requests.Done()
+			req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+			s.e.ServeHTTP(httptest.NewRecorder(), req)
+		}()
+	}
+	requests.Wait()
+	close(hubs)
+
+	first := <-hubs
+	second := <-hubs
+	s.NotNil(first)
+	s.NotNil(second)
+	s.NotSame(sentry.CurrentHub(), first)
+	s.NotSame(sentry.CurrentHub(), second)
+	s.NotSame(first, second)
+}
+
+func (s *MiddlewareTestSuite) TestErrorAndPanicStatus() {
+	s.Run("returned HTTP error", func() {
+		s.e = echo.New()
+		s.e.Use(Middleware())
+
+		var span *sentry.Span
+		s.e.GET("/", func(c *echo.Context) error {
+			span = sentry.TransactionFromContext(c.Request().Context())
+			return echo.NewHTTPError(http.StatusUnauthorized, "sensitive error")
+		})
+
+		s.e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+
+		s.Require().NotNil(span)
+		s.Equal(sentry.HTTPtoSpanStatus(http.StatusUnauthorized), span.Status)
+		s.Equal(strconv.Itoa(http.StatusUnauthorized), span.Tags[respStatus])
+		s.NotContains(span.Tags, "echo.error")
+	})
+
+	s.Run("panic is captured and repanicked", func() {
+		s.e = echo.New()
+		s.e.Use(Middleware())
+		s.transport.Flush(0)
+
+		var span *sentry.Span
+		s.e.GET("/", func(c *echo.Context) error {
+			span = sentry.TransactionFromContext(c.Request().Context())
+			panic("panic value")
+		})
+
+		s.Panics(func() {
+			s.e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+		})
+
+		s.Require().NotNil(span)
+		s.Equal(sentry.HTTPtoSpanStatus(http.StatusInternalServerError), span.Status)
+		s.Equal(strconv.Itoa(http.StatusInternalServerError), span.Tags[respStatus])
+		events := s.transport.Events()
+		s.Require().NotEmpty(events)
+		capturedPanic := false
+		for _, event := range events {
+			capturedPanic = capturedPanic || len(event.Exception) > 0 || event.Message == "panic value"
+		}
+		s.True(capturedPanic)
+	})
+}
+
+func (s *MiddlewareTestSuite) TestDownstreamContextIsPreserved() {
+	type contextKey struct{}
+
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	rec := httptest.NewRecorder()
+	c := s.e.NewContext(req, rec)
+	handler := Middleware()(func(c *echo.Context) error {
+		c.SetRequest(c.Request().WithContext(context.WithValue(c.Request().Context(), contextKey{}, "value")))
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	s.NoError(handler(c))
+	s.Equal("value", c.Request().Context().Value(contextKey{}))
+}
+
 func TestMiddleware(t *testing.T) {
 	suite.Run(t, new(MiddlewareTestSuite))
 }
@@ -367,7 +517,12 @@ func BenchmarkWithMiddlewareWithNoBodyNoHeaders(b *testing.B) {
 func BenchmarkWithMiddlewareWithBodyDump(b *testing.B) {
 	benchSentryInit(b)
 	router := echo.New()
-	router.Use(MiddlewareWithConfig(SentryConfig{IsBodyDump: true}))
+	router.Use(MiddlewareWithConfig(SentryConfig{
+		IsBodyDump: true,
+		BodySkipper: func(*echo.Context) (bool, bool) {
+			return false, false
+		},
+	}))
 	router.GET(userEndpoint, func(c *echo.Context) error {
 		id := c.Param("id")
 		return c.String(http.StatusOK, id)
