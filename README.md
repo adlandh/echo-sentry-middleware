@@ -51,21 +51,15 @@ func main() {
 	// Then create your app
 	app := echo.New()
 
-	// Add middleware
-	app.Use(echo_sentry_middleware.MiddlewareWithConfig(
-		echo_sentry_middleware.SentryConfig{
-			// if you would like to save your request or response headers as tags, set AreHeadersDump to true
-			AreHeadersDump: true,
-			// if you would like to save your request or response body as tags, set IsBodyDump to true
-			IsBodyDump: true,
-		}))
+	// Add middleware with secure defaults.
+	app.Use(echo_sentry_middleware.Middleware())
 
 	// Add some endpoints
-	app.POST("/", func(c echo.Context) error {
+	app.POST("/", func(c *echo.Context) error {
 		return c.String(http.StatusOK, "Hello, World!")
 	})
 
-	app.GET("/", func(ctx echo.Context) error {
+	app.GET("/", func(ctx *echo.Context) error {
 		return ctx.String(http.StatusOK, "Hello, World!")
 	})
 
@@ -84,13 +78,18 @@ type SentryConfig struct {
 	// Skipper defines a function to skip middleware execution
 	Skipper middleware.Skipper
 
-	// BodySkipper defines a function to exclude request/response body from logging
+	// BodySkipper explicitly selects request/response bodies that may be captured.
+	// All bodies are excluded when this is nil.
 	BodySkipper BodySkipper
 
-	// Add request & response headers to tracing tags
+	// Add request & response headers to tracing tags.
+	// Headers whose values may be recorded. Nil uses the default allowlist.
+	SafeHeaders []string
+
+	// Only allowlisted protocol metadata is recorded; all other values are redacted.
 	AreHeadersDump bool
 
-	// Add request & response body to attributes
+	// Enable body capture for bodies allowed by BodySkipper.
 	IsBodyDump bool
 }
 ```
@@ -105,49 +104,46 @@ app.Use(echo_sentry_middleware.Middleware())
 
 The default configuration:
 - Uses the default Echo skipper (which doesn't skip any requests)
-- Includes headers in the spans
+- Excludes request and response headers from the spans
 - Excludes request and response bodies from the spans
+- Uses a request-local Sentry Hub
 
 ### Custom Body Skipper
 
-You can define a custom function to skip logging of request and response bodies:
+Body capture requires both `IsBodyDump` and a `BodySkipper` that explicitly allows the route. Only enable it for non-sensitive content:
 
 ```go
 app.Use(echo_sentry_middleware.MiddlewareWithConfig(
 	echo_sentry_middleware.SentryConfig{
-		AreHeadersDump: true,
 		IsBodyDump:     true,
-		BodySkipper: func(c echo.Context) (skipReqBody bool, skipRespBody bool) {
-			// Skip request and response bodies for paths containing "sensitive"
-			if strings.Contains(c.Path(), "sensitive") {
-				return true, true
+		BodySkipper: func(c *echo.Context) (skipReqBody bool, skipRespBody bool) {
+			// Capture only this audited diagnostics endpoint.
+			if c.Path() == "/diagnostics" {
+				return false, false
 			}
-			// Skip only request bodies for paths containing "upload"
-			if strings.Contains(c.Path(), "upload") {
-				return true, false
-			}
-			return false, false
+			return true, true
 		},
 	}))
 ```
+
+Raw bodies may contain passwords, tokens, payment details, or personal data. The middleware truncates captured values but does not redact body fields.
 
 ## Captured Information
 
 When enabled, the middleware captures the following information and sends it to Sentry as span tags:
 
 ### Always Captured
-- Client IP address (`client_ip`)
-- Remote address (`remote_addr`)
-- Request URI (`request_uri`)
 - Path pattern (`path`)
 - Request ID (`request_id`)
 - Response status code (`resp.status`)
-- Path parameters (as `path.{param_name}`)
-- Basic auth username (as `user`) if present
 
 ### Captured When Headers Dump is Enabled
 - Request headers (as `req.header.{header_name}`)
 - Response headers (as `resp.header.{header_name}`)
+- Only `Accept`, `Accept-Encoding`, `Cache-Control`, `Content-Encoding`, `Content-Length`, `Content-Type`, and `Transfer-Encoding` values are recorded
+- Every other header value is replaced with `[redacted]`
+
+Set `SafeHeaders` to replace the default allowlist. Header names are case-insensitive; use an empty non-nil slice to redact every header value.
 
 ### Captured When Body Dump is Enabled
 - Request body (as `req.body`)

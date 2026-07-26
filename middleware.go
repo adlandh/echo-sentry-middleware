@@ -19,7 +19,7 @@ import (
 type BodySkipper func(*echo.Context) (skipReqBody bool, skipRespBody bool)
 
 func defaultBodySkipper(*echo.Context) (bool, bool) {
-	return false, false
+	return true, true
 }
 
 type (
@@ -28,13 +28,19 @@ type (
 		// Skipper defines a function to skip middleware.
 		Skipper middleware.Skipper
 
-		// BodySkipper defines a function to exclude body from logging
+		// BodySkipper explicitly selects which request and response bodies may be captured.
+		// When nil, all bodies are excluded.
 		BodySkipper BodySkipper
 
-		// add req headers & resp headers to tracing tags
+		// SafeHeaders lists headers whose values may be recorded when AreHeadersDump is enabled.
+		// When nil, the default allowlist is used. An empty non-nil slice records no values.
+		SafeHeaders []string
+
+		// AreHeadersDump adds request and response headers to tracing tags.
+		// Only allowlisted protocol metadata is recorded; all other values are redacted.
 		AreHeadersDump bool
 
-		// add req body & resp body to attributes
+		// IsBodyDump enables body capture for bodies allowed by BodySkipper.
 		IsBodyDump bool
 	}
 )
@@ -43,7 +49,8 @@ var (
 	// DefaultSentryConfig is the default Sentry Performance middleware config.
 	DefaultSentryConfig = SentryConfig{
 		Skipper:        middleware.DefaultSkipper,
-		AreHeadersDump: true,
+		AreHeadersDump: false,
+		SafeHeaders:    []string{"Accept", "Accept-Encoding", "Cache-Control", "Content-Encoding", "Content-Length", "Content-Type", "Transfer-Encoding"},
 		IsBodyDump:     false,
 	}
 )
@@ -63,62 +70,71 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 		config.BodySkipper = defaultBodySkipper
 	}
 
+	if config.SafeHeaders == nil {
+		config.SafeHeaders = DefaultSentryConfig.SafeHeaders
+	}
+
+	safeHeaders := make(map[string]struct{}, len(config.SafeHeaders))
+	for _, name := range config.SafeHeaders {
+		safeHeaders[http.CanonicalHeaderKey(name)] = struct{}{}
+	}
+
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
+		return func(c *echo.Context) (err error) {
 			if config.Skipper(c) {
 				return next(c)
 			}
 
-			request, span, endSpan := createSpan(c)
-			defer endSpan()
+			request, span, hub := createSpan(c)
+			request = request.WithContext(span.Context())
+			c.SetRequest(request)
 
-			ctx := span.Context()
+			var (
+				respDumper   *response.Dumper
+				skipRespBody = true
+			)
 
-			setTag(span, "client_ip", c.RealIP())
-			setTag(span, "remote_addr", request.RemoteAddr)
-			setTag(span, "request_uri", request.RequestURI)
+			defer func() {
+				panicValue := recover()
+
+				_, status := echo.ResolveResponseStatus(c.Response(), err)
+				if panicValue != nil {
+					status = http.StatusInternalServerError
+
+					hub.RecoverWithContext(c.Request().Context(), panicValue)
+				}
+
+				dumpResp(c, config, safeHeaders, span, respDumper, skipRespBody, status)
+				span.Finish()
+
+				if panicValue != nil {
+					panic(panicValue)
+				}
+			}()
+
 			setTag(span, "path", c.Path())
 
 			skipReqBody, skipRespBody := config.BodySkipper(c)
-
-			respDumper := dumpReq(c, config, span, request, skipReqBody, skipRespBody)
-
-			// setup request context - add span
-			c.SetRequest(request.WithContext(ctx))
+			respDumper = dumpReq(c, config, safeHeaders, span, request, skipReqBody, skipRespBody)
 
 			// call next middleware / controller
-			err := next(c)
-			if err != nil {
-				setTag(span, "echo.error", err.Error())
-			}
-
-			dumpResp(c, config, span, respDumper, skipRespBody)
-
-			return err
+			return next(c)
 		}
 	}
 }
 
 // dumpResp captures response information and adds it to the Sentry span.
-func dumpResp(c *echo.Context, config SentryConfig, span *sentry.Span, respDumper *response.Dumper, skipRespBody bool) {
+func dumpResp(c *echo.Context, config SentryConfig, safeHeaders map[string]struct{}, span *sentry.Span, respDumper *response.Dumper, skipRespBody bool, status int) {
 	// Add request ID to span
 	setTag(span, "request_id", getRequestID(c))
 
 	// Set span status based on HTTP response status
-	responseWriter := c.Response()
-
-	response, err := echo.UnwrapResponse(responseWriter)
-	if err != nil {
-		span.Status = sentry.HTTPtoSpanStatus(http.StatusInternalServerError)
-		setTag(span, "resp.status", strconv.Itoa(http.StatusInternalServerError))
-	} else {
-		span.Status = sentry.HTTPtoSpanStatus(response.Status)
-		setTag(span, "resp.status", strconv.Itoa(response.Status))
-	}
+	span.Status = sentry.HTTPtoSpanStatus(status)
+	setTag(span, "resp.status", strconv.Itoa(status))
 
 	// Dump response headers if enabled
-	if config.AreHeadersDump && err == nil {
-		captureResponseHeaders(response, span)
+	if config.AreHeadersDump {
+		captureHeaders("resp.header.", c.Response().Header(), safeHeaders, span)
 	}
 
 	// Dump response body if enabled
@@ -131,11 +147,15 @@ func dumpResp(c *echo.Context, config SentryConfig, span *sentry.Span, respDumpe
 	}
 }
 
-// captureResponseHeaders adds response headers to the span as tags
-func captureResponseHeaders(response *echo.Response, span *sentry.Span) {
-	header := response.Header()
+// captureHeaders adds non-sensitive headers to the span as tags.
+func captureHeaders(prefix string, header http.Header, safeHeaders map[string]struct{}, span *sentry.Span) {
 	for k, v := range header {
-		setTag(span, "resp.header."+k, strings.Join(v, ", "))
+		value := "[redacted]"
+		if _, ok := safeHeaders[http.CanonicalHeaderKey(k)]; ok {
+			value = strings.Join(v, ", ")
+		}
+
+		setTag(span, prefix+k, value)
 	}
 }
 
@@ -153,22 +173,10 @@ const maxBodyCaptureBytes = MaxTagValueLength * 4
 
 // dumpReq captures request information and adds it to the Sentry span.
 // It returns a response dumper if body dumping is enabled.
-func dumpReq(c *echo.Context, config SentryConfig, span *sentry.Span, request *http.Request, skipReqBody bool, skipRespBody bool) *response.Dumper {
-	// Add basic auth username if present
-	if username, _, ok := request.BasicAuth(); ok {
-		setTag(span, "user", username)
-	}
-
-	// Add path parameters
-	for _, param := range c.PathValues() {
-		setTag(span, "path."+param.Name, param.Value)
-	}
-
+func dumpReq(c *echo.Context, config SentryConfig, safeHeaders map[string]struct{}, span *sentry.Span, request *http.Request, skipReqBody bool, skipRespBody bool) *response.Dumper {
 	// Dump request headers if enabled
 	if config.AreHeadersDump {
-		for k, v := range request.Header {
-			setTag(span, "req.header."+k, strings.Join(v, ", "))
-		}
+		captureHeaders("req.header.", request.Header, safeHeaders, span)
 	}
 
 	// Initialize response dumper
@@ -219,33 +227,28 @@ func captureRequestBody(request *http.Request, span *sentry.Span, skipReqBody bo
 	setTag(span, "req.body", string(reqBody))
 }
 
-// createSpan creates a new Sentry span for the current request and returns:
-// - the original HTTP request
-// - the created Sentry span
-// - a cleanup function that restores the original context and finishes the span
-func createSpan(c *echo.Context) (*http.Request, *sentry.Span, func()) {
+// createSpan creates a request-local Sentry Hub and span.
+func createSpan(c *echo.Context) (*http.Request, *sentry.Span, *sentry.Hub) {
 	request := c.Request()
-	originalContext := request.Context()
 
-	// Create operation name using the HTTP method and path pattern (e.g., "HTTP GET /users/:id")
-	operationName := "HTTP " + request.Method + " " + c.Path()
-
-	// Create transaction name using the HTTP method and full request URI (e.g., "HTTP GET /users/123")
-	transactionName := "HTTP " + request.Method + " " + request.RequestURI
-
-	// Start a new Sentry span
-	span := sentry.StartSpan(originalContext, operationName, sentry.WithTransactionName(transactionName))
-
-	// Return the cleanup function that will be called when the middleware is done
-	cleanupFunc := func() {
-		// Restore the original context on whatever request the handler chain left in place,
-		// so downstream c.SetRequest(...) calls are preserved.
-		current := c.Request()
-		c.SetRequest(current.WithContext(originalContext))
-
-		// Finish the span
-		span.Finish()
+	hub := sentry.GetHubFromContext(request.Context())
+	if hub == nil {
+		hub = sentry.CurrentHub()
 	}
 
-	return request, span, cleanupFunc
+	hub = hub.Clone()
+	ctx := sentry.SetHubOnContext(request.Context(), hub)
+
+	// Create operation name using the HTTP method and path pattern (e.g., "HTTP GET /users/:id")
+	route := c.Path()
+	if route == "" {
+		route = "unmatched"
+	}
+
+	operationName := "HTTP " + request.Method + " " + route
+
+	// Start a new Sentry span
+	span := sentry.StartSpan(ctx, operationName, sentry.WithTransactionName(operationName))
+
+	return request, span, hub
 }
