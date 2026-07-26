@@ -97,13 +97,15 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 
 			defer func() {
 				panicValue := recover()
+
+				statusOverride := 0
 				if panicValue != nil {
-					err = echo.NewHTTPError(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+					statusOverride = http.StatusInternalServerError
 
 					hub.RecoverWithContext(c.Request().Context(), panicValue)
 				}
 
-				dumpResp(c, config, safeHeaders, span, respDumper, skipRespBody, err)
+				dumpResp(c, config, safeHeaders, span, respDumper, skipRespBody, err, statusOverride)
 				span.Finish()
 
 				if panicValue != nil {
@@ -118,12 +120,16 @@ func MiddlewareWithConfig(config SentryConfig) echo.MiddlewareFunc {
 }
 
 // dumpResp captures response information and adds it to the Sentry span.
-func dumpResp(c *echo.Context, config SentryConfig, safeHeaders map[string]struct{}, span *sentry.Span, respDumper *response.Dumper, skipRespBody bool, handlerErr error) {
+func dumpResp(c *echo.Context, config SentryConfig, safeHeaders map[string]struct{}, span *sentry.Span, respDumper *response.Dumper, skipRespBody bool, handlerErr error, statusOverride int) {
 	// Add request ID to span
 	setTag(span, "request_id", getRequestID(c))
 
 	// Set span status based on HTTP response status
 	responseWriter, status := echo.ResolveResponseStatus(c.Response(), handlerErr)
+	if statusOverride != 0 {
+		status = statusOverride
+	}
+
 	span.Status = sentry.HTTPtoSpanStatus(status)
 	setTag(span, "resp.status", strconv.Itoa(status))
 

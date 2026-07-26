@@ -422,14 +422,19 @@ func (s *MiddlewareTestSuite) TestErrorAndPanicStatus() {
 		var span *sentry.Span
 		s.e.GET("/", func(c *echo.Context) error {
 			span = sentry.TransactionFromContext(c.Request().Context())
+			if err := c.String(http.StatusOK, "committed response"); err != nil {
+				return err
+			}
 			panic("panic value")
 		})
 
+		rec := httptest.NewRecorder()
 		s.Panics(func() {
-			s.e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+			s.e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 		})
 
 		s.Require().NotNil(span)
+		s.Equal(http.StatusOK, rec.Code)
 		s.Equal(sentry.HTTPtoSpanStatus(http.StatusInternalServerError), span.Status)
 		s.Equal(strconv.Itoa(http.StatusInternalServerError), span.Tags[respStatus])
 		events := s.transport.Events()
